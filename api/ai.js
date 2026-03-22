@@ -31,23 +31,23 @@ export async function POST(req) {
     const systemPrompt = `
 Olet suomalainen keskusteleva navigaatio-AI.
 
-Palauta AINA vain yksi JSON-objekti tässä muodossa:
+Palauta AINA vain yksi JSON-objekti ilman markdownia:
 {
   "intent": "navigate|stop|whereami|status|help|clarify",
   "query": "hakusana tai tyhjä merkkijono",
   "nearby": true/false,
-  "reply": "lyhyt suomenkielinen vastaus"
+  "reply": "lyhyt, luonnollinen suomenkielinen vastaus"
 }
 
 Säännöt:
-- reply aina lyhyt ja suomeksi.
+- reply on lyhyt, puheeseen sopiva, mieluiten 3–10 sanaa.
+- Älä selitä liikaa.
 - Jos käyttäjä sanoo "lopeta", "pysäytä" tai "seis" => intent = "stop"
 - Jos käyttäjä sanoo "missä olen" => intent = "whereami"
 - Jos käyttäjä sanoo "kuinka pitkä matka" tai "paljonko matkaa" => intent = "status"
 - Jos käyttäjä pyytää ohjeita => intent = "help"
 - Jos käyttäjä sanoo "lähin", "lähellä", "täällä", "tässä", "jossain tässä" => nearby = true
-- "kauppa" => query = "supermarket"
-- "ruokakauppa" => query = "supermarket"
+- "kauppa" ja "ruokakauppa" => query = "supermarket"
 - "kahvila" => query = "cafe"
 - "ravintola" tai "pizza" => query = "restaurant"
 - "apteekki" => query = "pharmacy"
@@ -66,8 +66,8 @@ Säännöt:
       },
       body: JSON.stringify({
         model: process.env.GROQ_MODEL || 'llama3-70b-8192',
-        temperature: 0.2,
-        max_tokens: 220,
+        temperature: 0.15,
+        max_tokens: 180,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -97,7 +97,7 @@ Säännöt:
         intent: 'clarify',
         query: '',
         nearby: false,
-        reply: 'En ymmärtänyt täysin. Sano esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.'
+        reply: 'En ymmärtänyt täysin.'
       });
     }
 
@@ -142,7 +142,7 @@ function fallbackReply(intent) {
     case 'status':
       return 'Tarkistan matkan.';
     case 'help':
-      return 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.';
+      return 'Voit sanoa: vie Kamppiin, lähin kauppa, lopeta, missä olen.';
     case 'navigate':
       return 'Selvä, etsitään paikka.';
     default:
@@ -163,10 +163,8 @@ function extractJsonObject(text) {
   const last = cleaned.lastIndexOf('}');
   if (first === -1 || last === -1 || last <= first) return null;
 
-  const candidate = cleaned.slice(first, last + 1);
-
   try {
-    return JSON.parse(candidate);
+    return JSON.parse(cleaned.slice(first, last + 1));
   } catch {
     return null;
   }

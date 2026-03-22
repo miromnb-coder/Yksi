@@ -1,17 +1,11 @@
 document.addEventListener('click', () => {
-  setTimeout(() => {
-  try {
-    speechSynthesis.cancel();
-    speechSynthesis.resume();
-  } catch {}
-}, 1000);
   try {
     speechSynthesis.cancel();
     speechSynthesis.resume();
   } catch {}
 }, { once: true });
 
-const $ = (id) => document.getElementById(id)
+const $ = (id) => document.getElementById(id);
 
 const el = {
   cam: $('cam'),
@@ -58,8 +52,11 @@ const state = {
   lastRouteAt: 0,
   routeLoading: false,
   mapVisible: true,
-  ttsVoice: null,
-  relistenTimer: null
+  relistenTimer: null,
+  _voiceInitDone: false,
+  _voiceUnlocked: false,
+  _voices: [],
+  _voiceQueue: []
 };
 
 const ALIASES = {
@@ -142,45 +139,39 @@ function arrowRotationFromDiff(d) {
   return 0;
 }
 
-function bestFinnishVoice() {
-  const voices = window.speechSynthesis?.getVoices?.() || [];
-  return voices.find(v => /^fi\b/i.test(v.lang)) ||
-    voices.find(v => /finn/i.test(v.name)) ||
-    voices.find(v => /siri/i.test(v.name)) ||
-    voices.find(v => v.default) ||
-    voices[0] ||
-    null;
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function scheduleRelisten(delay = 500) {
-  clearTimeout(state.relistenTimer);
-  if (!state.conversationMode) return;
-
-  state.relistenTimer = setTimeout(() => {
-    if (state.conversationMode && !state.listening && !state.recording && !state.processingVoice) {
-      startVoiceInput();
-    }
-  }, delay);
-}
-
-function initUltraVoice() {
-  if (state._ultraVoiceInitDone) return;
-  state._ultraVoiceInitDone = true;
-
-  const refresh = () => {
+async function waitUntilSpeechIdle(timeout = 2500) {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
     try {
-      state._voices = window.speechSynthesis?.getVoices?.() || [];
-    } catch {
-      state._voices = [];
-    }
-  };
+      if (!speechSynthesis.speaking && !speechSynthesis.pending) return true;
+    } catch {}
+    await wait(50);
+  }
+  return false;
+}
 
-  refresh();
+function refreshVoices() {
+  try {
+    state._voices = window.speechSynthesis?.getVoices?.() || [];
+  } catch {
+    state._voices = [];
+  }
+}
+
+function initVoiceSystem() {
+  if (state._voiceInitDone) return;
+  state._voiceInitDone = true;
+
+  refreshVoices();
 
   if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = () => {
-      refresh();
-      flushUltraVoiceQueue();
+      refreshVoices();
+      flushVoiceQueue();
     };
   }
 
@@ -189,9 +180,9 @@ function initUltraVoice() {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       window.speechSynthesis.resume();
-      refresh();
+      refreshVoices();
       state._voiceUnlocked = true;
-      flushUltraVoiceQueue();
+      flushVoiceQueue();
     } catch {}
   };
 
@@ -206,58 +197,74 @@ async function unlockUltraVoice() {
 
     window.speechSynthesis.cancel();
     window.speechSynthesis.resume();
+    refreshVoices();
 
-    if (!state._voices || !state._voices.length) {
-      state._voices = window.speechSynthesis.getVoices?.() || [];
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      state._voices = window.speechSynthesis.getVoices?.() || state._voices;
+    if (!state._voices.length) {
+      await wait(150);
+      refreshVoices();
     }
 
     state._voiceUnlocked = true;
-    flushUltraVoiceQueue();
+    flushVoiceQueue();
     return true;
   } catch {
     return false;
   }
 }
 
-function pickUltraFinnishVoice() {
+function pickBestVoice() {
   const voices = (state._voices && state._voices.length)
     ? state._voices
     : (window.speechSynthesis?.getVoices?.() || []);
 
-  return (
-    voices.find(v => /^fi\b/i.test(v.lang)) ||
-    voices.find(v => /finn/i.test(v.name)) ||
-    voices.find(v => /siri/i.test(v.name)) ||
-    voices.find(v => v.default) ||
-    voices[0] ||
-    null
-  );
+  if (!voices.length) return null;
+
+  const score = (v) => {
+    let s = 0;
+    const lang = String(v.lang || '').toLowerCase();
+    const name = String(v.name || '').toLowerCase();
+
+    if (lang.startsWith('fi')) s += 100;
+    if (name.includes('siri')) s += 80;
+    if (name.includes('finn')) s += 70;
+    if (v.localService) s += 10;
+    if (v.default) s += 5;
+    return s;
+  };
+
+  return [...voices].sort((a, b) => score(b) - score(a))[0] || null;
 }
 
-function flushUltraVoiceQueue() {
-  if (!state._voiceQueue || !state._voiceQueue.length) return;
+function flushVoiceQueue() {
+  if (!state._voiceQueue.length) return;
   const items = [...state._voiceQueue];
   state._voiceQueue = [];
 
-  items.forEach((item, index) => {
+  items.forEach((item, idx) => {
     setTimeout(() => {
       speakFi(item.text, item.options || {});
-    }, index * 350);
+    }, idx * 300);
   });
+}
+
+function scheduleRelisten(delay = 450) {
+  clearTimeout(state.relistenTimer);
+  if (!state.conversationMode) return;
+
+  state.relistenTimer = setTimeout(() => {
+    if (state.conversationMode && !state.listening && !state.recording && !state.processingVoice) {
+      startVoiceInput();
+    }
+  }, delay);
 }
 
 function speakFi(text, options = {}) {
   const clean = String(text || '').trim();
   if (!clean || !('speechSynthesis' in window)) return;
 
-  if (!state._voiceQueue) state._voiceQueue = [];
-  if (typeof state._voiceUnlocked === 'undefined') state._voiceUnlocked = false;
-
   const shouldRelisten = options.relisten !== false && state.conversationMode;
-  const rate = typeof options.rate === 'number' ? options.rate : 0.94;
-  const pitch = typeof options.pitch === 'number' ? options.pitch : 1.0;
+  const rate = typeof options.rate === 'number' ? options.rate : 0.90;
+  const pitch = typeof options.pitch === 'number' ? options.pitch : 1.03;
   const volume = typeof options.volume === 'number' ? options.volume : 1.0;
 
   const doSpeak = () => {
@@ -268,7 +275,7 @@ function speakFi(text, options = {}) {
       utter.pitch = pitch;
       utter.volume = volume;
 
-      const voice = pickUltraFinnishVoice();
+      const voice = pickBestVoice();
       if (voice) utter.voice = voice;
 
       utter.onend = () => {
@@ -281,6 +288,7 @@ function speakFi(text, options = {}) {
       };
 
       window.speechSynthesis.cancel();
+
       setTimeout(() => {
         try {
           window.speechSynthesis.speak(utter);
@@ -301,28 +309,24 @@ function speakFi(text, options = {}) {
   doSpeak();
 }
 
+function speakFiAsync(text, options = {}) {
+  return new Promise((resolve) => {
+    speakFi(text, {
+      ...options,
+      onEnd: () => {
+        if (typeof options.onEnd === 'function') options.onEnd();
+        resolve();
+      }
+    });
+  });
+}
+
 function normalizeText(t) {
   return String(t || '')
     .toLowerCase()
     .replace(/[.,!?]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function normalizeQuery(text) {
-  const t = normalizeText(text);
-
-  if (t.includes('lähin kauppa') || t.includes('kauppa')) return { q: 'supermarket', nearby: true };
-  if (t.includes('lähin ruokakauppa') || t.includes('ruokakauppa')) return { q: 'supermarket', nearby: true };
-  if (t.includes('lähin kahvila') || t.includes('kahvila')) return { q: 'cafe', nearby: true };
-  if (t.includes('lähin apteekki') || t.includes('apteekki')) return { q: 'pharmacy', nearby: true };
-  if (t.includes('lähin ravintola') || t.includes('ravintola') || t.includes('pizza')) return { q: 'restaurant', nearby: true };
-  if (t.includes('bussi')) return { q: 'bus stop', nearby: true };
-  if (t.includes('juna') || t.includes('asema')) return { q: 'train station', nearby: true };
-  if (t.includes('wc') || t.includes('vessa')) return { q: 'toilet', nearby: true };
-  if (t.includes('kuntosali')) return { q: 'gym', nearby: true };
-
-  return { q: text, nearby: false };
 }
 
 function normalizeIntent(intent) {
@@ -340,7 +344,7 @@ function fallbackReply(intent) {
     case 'status':
       return 'Tarkistan matkan.';
     case 'help':
-      return 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.';
+      return 'Voit sanoa: vie Kamppiin, lähin kauppa, lopeta, missä olen.';
     case 'navigate':
       return 'Selvä, etsitään paikka.';
     default:
@@ -386,7 +390,7 @@ function localParseCommand(text) {
   if (t.includes('apu') || t.includes('ohje')) {
     return {
       intent: 'help',
-      reply: 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.',
+      reply: 'Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen.',
       query: '',
       nearby: false
     };
@@ -448,7 +452,7 @@ function localParseCommand(text) {
 
   return {
     intent: 'clarify',
-    reply: 'En ymmärtänyt täysin. Sano esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.',
+    reply: 'En ymmärtänyt täysin. Sano esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen.',
     query: '',
     nearby: false
   };
@@ -480,14 +484,12 @@ async function converseWithAI(transcript) {
   const ai = await callAI(transcript);
   if (!ai) return localParseCommand(transcript);
 
-  const parsed = {
+  return {
     intent: normalizeIntent(ai.intent),
     query: String(ai.query || '').trim(),
     nearby: Boolean(ai.nearby),
     reply: String(ai.reply || '').trim() || fallbackReply(normalizeIntent(ai.intent))
   };
-
-  return parsed;
 }
 
 function categoryForNearby(query) {
@@ -573,9 +575,7 @@ async function searchNearbyPlace(query) {
   if (!state.current) throw new Error('Sijainti puuttuu');
 
   const category = categoryForNearby(query);
-  if (!category) {
-    return searchExactPlace(query);
-  }
+  if (!category) return searchExactPlace(query);
 
   const lat = state.current.lat;
   const lng = state.current.lng;
@@ -612,9 +612,7 @@ out center tags;
     })
     .filter(Boolean);
 
-  if (!points.length) {
-    return searchExactPlace(query);
-  }
+  if (!points.length) return searchExactPlace(query);
 
   points.sort((a, b) => haversine(state.current, a) - haversine(state.current, b));
   return points[0];
@@ -651,9 +649,7 @@ function extractSteps(route) {
 
 function stepLocation(step, fallback) {
   const loc = step?.maneuver?.location;
-  if (Array.isArray(loc) && loc.length >= 2) {
-    return { lat: loc[1], lng: loc[0] };
-  }
+  if (Array.isArray(loc) && loc.length >= 2) return { lat: loc[1], lng: loc[0] };
   return fallback;
 }
 
@@ -1015,7 +1011,7 @@ async function handleVoiceText(text) {
   }
 
   if (data.intent === 'help') {
-    speakFi(data.reply || 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
+    speakFi(data.reply || 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen.');
     return data;
   }
 
@@ -1239,6 +1235,7 @@ async function startRecordingVoice() {
 
 async function startVoiceInput() {
   if (!state.conversationMode) state.conversationMode = true;
+  await waitUntilSpeechIdle(1500);
 
   const ok = startSpeechRecognition();
   if (!ok) {
@@ -1369,10 +1366,10 @@ document.addEventListener('touchend', (e) => {
 }, { passive: true });
 
 window.addEventListener('load', () => {
+  initVoiceSystem();
   updateLoop();
   setMode('Valmis');
   showHint('Paina Aloita');
-  initUltraVoice();
 
   if ('speechSynthesis' in window) {
     try { window.speechSynthesis.getVoices(); } catch {}

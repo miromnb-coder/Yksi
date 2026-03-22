@@ -1,4 +1,11 @@
-const $ = (id) => document.getElementById(id);
+document.addEventListener('click', () => {
+  try {
+    speechSynthesis.cancel();
+    speechSynthesis.resume();
+  } catch {}
+}, { once: true });
+
+const $ = (id) => document.getElementById(id)
 
 const el = {
   cam: $('cam'),

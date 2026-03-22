@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Halo HUD</title>
+  <style>
+    :root {
+      --bg: #020203;
+      --glass: rgba(255,255,255,0.06);
+      --line: rgba(255,255,255,0.10);
+      --text: rgba(255,255,255,0.96);
+      --muted: rgba(255,255,255,0.56);
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 35%, rgba(255,255,255,0.08), transparent 28%),
+        linear-gradient(180deg, #07070a, var(--bg));
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+      touch-action: none;
+    }
+
+    #app {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px;
+      box-sizing: border-box;
+    }
+
+    #top {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    #dest {
+      flex: 1;
+      min-height: 50px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: var(--glass);
+      backdrop-filter: blur(18px);
+      color: var(--text);
+      padding: 0 14px;
+      font-size: 15px;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    #go {
+      min-width: 58px;
+      min-height: 50px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.10);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    #hud {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      opacity: 0;
+      transition: opacity 220ms ease;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    #hud.show {
+      opacity: 1;
+    }
+
+    .ring {
+      width: 136px;
+      height: 136px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,0.12);
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 45%, transparent 66%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 40px rgba(255,255,255,0.05);
+    }
+
+    .arrow {
+      width: 84px;
+      height: 84px;
+      border-radius: 26px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.07);
+      box-shadow: 0 14px 28px rgba(0,0,0,0.25);
+      font-size: 56px;
+      line-height: 1;
+    }
+
+    #distance {
+      min-width: 120px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.06);
+      font-size: 18px;
+      backdrop-filter: blur(18px);
+    }
+
+    #sub {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    #bottom {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .chip {
+      flex: 1;
+      min-width: 0;
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.05);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #hint {
+      position: absolute;
+      left: 50%;
+      bottom: 118px;
+      transform: translateX(-50%);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid var(--line);
+      color: rgba(255,255,255,0.74);
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 180ms ease;
+      pointer-events: none;
+    }
+
+    #hint.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="top">
+      <input id="dest" placeholder="Kirjoita kohde, esim. Kamppi Helsinki" />
+      <button id="go">Go</button>
+    </div>
+
+    <div id="hud">
+      <div class="ring">
+        <div class="arrow" id="arrow">↑</div>
+      </div>
+      <div id="distance">—</div>
+      <div id="sub">Ready</div>
+    </div>
+
+    <div id="hint">Swipe vasen/oikea vaihtaa HUD / Map</div>
+
+    <div id="bottom">
+      <div class="chip" id="gps">GPS: off</div>
+      <div class="chip" id="mode">Mode: HUD</div>
+      <div class="chip" id="acc">Acc: —</div>
+    </div>
+  </div>
+
+  <script>
+    const hud = document.getElementById('hud');
+    const arrow = document.getElementById('arrow');
+    const distanceEl = document.getElementById('distance');
+    const sub = document.getElementById('sub');
+    const gps = document.getElementById('gps');
+    const mode = document.getElementById('mode');
+    const acc = document.getElementById('acc');
+    const hint = document.getElementById('hint');
+    const dest = document.getElementById('dest');
+
+    const state = {
+      current: null,
+      target: null,
+      watchId: null,
+      heading: null
+    };
+
+    function showHint(text) {
+      hint.textContent = text;
+      hint.classList.add('show');
+      clearTimeout(showHint.t);
+      showHint.t = setTimeout(() => hint.classList.remove('show'), 1300);
+    }
+
+    function toRad(v) { return v * Math.PI / 180; }
+    function toDeg(v) { return v * 180 / Math.PI; }
+
+    function haversine(a, b) {
+      const R = 6371000;
+      const dLat = toRad(b.lat - a.lat);
+      const dLon = toRad(b.lng - a.lng);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(x));
+    }
+
+    function bearing(from, to) {
+      const φ1 = toRad(from.lat), φ2 = toRad(to.lat);
+      const λ1 = toRad(from.lng), λ2 = toRad(to.lng);
+      const y = Math.sin(λ2 - λ1) * Math.cos(φ2);
+      const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
+      return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function diffAngle(a, b) {
+      let d = ((a - b) % 360 + 360) % 360;
+      if (d > 180) d -= 360;
+      return d;
+    }
+
+    function arrowFromDiff(d) {
+      if (Math.abs(d) < 18) return '↑';
+      if (d >= 18 && d < 60) return '↗';
+      if (d >= 60 && d < 120) return '→';
+      if (d >= 120) return '↘';
+      if (d <= -18 && d > -60) return '↖';
+      if (d <= -60 && d > -120) return '←';
+      if (d <= -120) return '↙';
+      return '↑';
+    }
+
+    function formatDistance(m) {
+      if (m == null || Number.isNaN(m)) return '—';
+      if (m < 1000) return `${Math.round(m)} m`;
+      return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+    }
+
+    async function geocode(q) {
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=1`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.length) throw new Error('Ei löytynyt');
+      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    }
+
+    function updateHUD() {
+      if (!state.current || !state.target) return;
+
+      const d = haversine(state.current, state.target);
+      const b = bearing(state.current, state.target);
+      const h = state.heading;
+
+      arrow.textContent = h == null ? '↑' : arrowFromDiff(diffAngle(b, h));
+      distanceEl.textContent = d < 30 ? 'Arrived' : formatDistance(d);
+      sub.textContent = d < 30 ? 'Done' : 'Navigate';
+      gps.textContent = 'GPS: on';
+      acc.textContent = state.current.accuracy ? `Acc: ±${Math.round(state.current.accuracy)}m` : 'Acc: —';
+      hud.classList.add('show');
+
+      if (d < 30) arrow.textContent = '✓';
+    }
+
+    async function start() {
+      const q = dest.value.trim();
+      if (!q) {
+        showHint('Kirjoita kohde ensin');
+        return;
+      }
+
+      showHint('Haetaan paikka…');
+      state.target = await geocode(q);
+
+      navigator.geolocation.getCurrentPosition((pos) => {
+        state.current = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        };
+        updateHUD();
+      }, () => {
+        showHint('Sijaintilupa puuttuu');
+      }, { enableHighAccuracy: true, timeout: 12000 });
+
+      if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
+      state.watchId = navigator.geolocation.watchPosition((pos) => {
+        state.current = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        };
+        updateHUD();
+      }, () => {}, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+    }
+
+    document.getElementById('go').onclick = () => start().catch(err => {
+      console.error(err);
+      showHint('Virhe');
+    });
+
+    dest.value = 'Kamppi Helsinki';
+
+    let sx = 0, sy = 0, tracking = false;
+    document.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      sx = t.clientX;
+      sy = t.clientY;
+      tracking = true;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 35) {
+        mode.textContent = dx > 0 ? 'Mode: MAP' : 'Mode: HUD';
+        showHint(dx > 0 ? 'Map mode' : 'HUD mode');
+      }
+    }, { passive: true });
+
+    function setupTilt() {
+      window.addEventListener('deviceorientation', (e) => {
+        const gamma = e.gamma || 0;
+        const beta = e.beta || 0;
+        arrow.style.transform = `translate(${Math.max(-10, Math.min(10, gamma / 2))}px, ${Math.max(-8, Math.min(8, beta / 5))}px)`;
+      }, true);
+    }
+
+    document.body.addEventListener('click', () => {
+      if (window.DeviceOrientationEvent) setupTilt();
+    }, { once: true });
+
+    showHint('Ready');
+  </script>
+</body>
+</html>

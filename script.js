@@ -4,6 +4,8 @@ const state = {
   current: null,
   target: null,
   targetLabel: '',
+  lastQuery: '',
+  lastIntent: '',
   routeSteps: [],
   activeStepIndex: 0,
   watchId: null,
@@ -18,11 +20,11 @@ const state = {
   lastVibeAt: 0,
   routeLine: null,
   currentMarker: null,
-  targetMarker: null
+  targetMarker: null,
+  routeLoading: false
 };
 
 let map;
-let voiceRecognition = null;
 
 const centerEl = $('center');
 const arrowSvg = $('arrowSvg');
@@ -37,6 +39,28 @@ const hint = $('hint');
 const micState = $('micState');
 const destInput = $('dest');
 const mapEl = $('map');
+
+const PLACE_ALIASES = {
+  kamppi: ['Kamppi Helsinki', 'Kamppi'],
+  kampiin: ['Kamppi Helsinki', 'Kamppi'],
+  stockmann: ['Stockmann Helsinki'],
+  stokka: ['Stockmann Helsinki'],
+  stokkalle: ['Stockmann Helsinki'],
+  jumbo: ['Jumbo Vantaa'],
+  jumbolle: ['Jumbo Vantaa'],
+  rautatieasema: ['Helsingin päärautatieasema', 'Helsingin rautatieasema'],
+  päärautatieasema: ['Helsingin päärautatieasema'],
+  asema: ['asema'],
+  kauppa: ['ruokakauppa'],
+  ruokakauppa: ['ruokakauppa'],
+  kahvila: ['kahvila'],
+  apteekki: ['apteekki'],
+  ravintola: ['ravintola'],
+  pizza: ['ravintola'],
+  prisma: ['Prisma'],
+  citymarket: ['K-Citymarket'],
+  kmarket: ['K-Market']
+};
 
 function showHint(text, ms = 1800) {
   hint.textContent = text;
@@ -135,22 +159,27 @@ function localParseCommand(text) {
   const t = normalizeText(text);
 
   if (t.includes('lopeta') || t.includes('pysäytä') || t.includes('pysayta') || t.includes('seis')) {
-    return { intent: 'stop' };
+    return { intent: 'stop', reply: 'Navigointi pysäytetty.', query: '', nearby: false };
   }
 
   if (t.includes('missä olen') || t.includes('missä mä oon') || t.includes('sijainti')) {
-    return { intent: 'whereami' };
+    return { intent: 'whereami', reply: 'Kerron sijaintisi.', query: '', nearby: false };
   }
 
   if (t.includes('kuinka pitkä matka') || t.includes('paljonko matkaa') || t.includes('matka')) {
-    return { intent: 'status' };
+    return { intent: 'status', reply: 'Katsotaan matka.', query: '', nearby: false };
   }
 
   if (t.includes('apu') || t.includes('ohje')) {
-    return { intent: 'help' };
+    return {
+      intent: 'help',
+      reply: 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.',
+      query: '',
+      nearby: false
+    };
   }
 
-  const nearbyKeywords = ['lähin', 'lähimpään', 'ruokakauppa', 'kauppa', 'kahvila', 'asema', 'apteekki', 'pizza', 'ravintola'];
+  const nearbyKeywords = ['lähin', 'lähimpään', 'ruokakauppa', 'kauppa', 'kahvila', 'asema', 'apteekki', 'ravintola', 'pizza'];
   const nearby = nearbyKeywords.some(k => t.includes(k));
 
   if (nearby) {
@@ -159,22 +188,24 @@ function localParseCommand(text) {
     else if (t.includes('kahvila')) query = 'kahvila';
     else if (t.includes('apteekki')) query = 'apteekki';
     else if (t.includes('asema')) query = 'asema';
-    else if (t.includes('pizza') || t.includes('ravintola')) query = 'ravintola';
-    return { intent: 'navigate', query, nearby: true };
+    else if (t.includes('ravintola') || t.includes('pizza')) query = 'ravintola';
+
+    return {
+      intent: 'navigate',
+      reply: `Selvä, etsitään ${query}.`,
+      query,
+      nearby: true
+    };
   }
 
-  const fixes = {
-    kamppi: 'Kamppi Helsinki',
-    kampiin: 'Kamppi Helsinki',
-    jumbolle: 'Jumbo Vantaa',
-    jumbo: 'Jumbo Vantaa',
-    stokkalle: 'Stockmann Helsinki',
-    stokka: 'Stockmann Helsinki'
-  };
-
-  for (const [k, v] of Object.entries(fixes)) {
-    if (t === k || t.includes(` ${k} `) || t.startsWith(k) || t.endsWith(k)) {
-      return { intent: 'navigate', query: v, nearby: false };
+  for (const [needle, values] of Object.entries(PLACE_ALIASES)) {
+    if (t === needle || t.includes(` ${needle} `) || t.startsWith(needle) || t.endsWith(needle)) {
+      return {
+        intent: 'navigate',
+        reply: `Selvä, etsitään ${values[0]}.`,
+        query: values[0],
+        nearby: false
+      };
     }
   }
 
@@ -183,10 +214,31 @@ function localParseCommand(text) {
       .replace(/^(vie|mene|navigoi|ohjaa)\s+/i, '')
       .replace(/^(kohteeseen|paikkaan|osoitteeseen)\s+/i, '')
       .trim();
-    return { intent: 'navigate', query: cleaned || text, nearby: false };
+
+    const query = cleaned || state.lastQuery || 'kohde';
+    return {
+      intent: 'navigate',
+      reply: `Selvä, etsitään ${query}.`,
+      query,
+      nearby: false
+    };
   }
 
-  return { intent: 'navigate', query: text, nearby: false };
+  if (t.includes('sinne') || t.includes('samaan paikkaan') || t.includes('sama paikka')) {
+    return {
+      intent: 'navigate',
+      reply: state.lastQuery ? `Selvä, etsitään sama paikka: ${state.lastQuery}.` : 'Minne haluat mennä?',
+      query: state.lastQuery,
+      nearby: false
+    };
+  }
+
+  return {
+    intent: 'clarify',
+    reply: 'En ymmärtänyt täysin. Sano esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.',
+    query: '',
+    nearby: false
+  };
 }
 
 async function callAI(text) {
@@ -196,7 +248,9 @@ async function callAI(text) {
     body: JSON.stringify({
       text,
       currentLocation: state.current,
-      activeTarget: state.targetLabel
+      activeTarget: state.targetLabel,
+      lastQuery: state.lastQuery,
+      lastIntent: state.lastIntent
     })
   });
 
@@ -227,7 +281,52 @@ async function resolveVoiceQuery(text) {
     const normalized = normalizeAiResult(ai);
     if (normalized) return normalized;
   } catch {}
+
   return localParseCommand(text);
+}
+
+function searchVariants(rawQuery, nearby) {
+  const t = normalizeText(rawQuery);
+  const variants = new Set();
+
+  if (!t) return [];
+
+  variants.add(rawQuery.trim());
+
+  const aliasValues = PLACE_ALIASES[t];
+  if (aliasValues) {
+    for (const v of aliasValues) variants.add(v);
+  }
+
+  if (!/finland|suomi|helsinki|espoo|vantaa|tampere|turku|oulu|jyväskylä|rovaniemi/i.test(rawQuery)) {
+    variants.add(`${rawQuery}, Finland`);
+  }
+
+  if (nearby) {
+    if (t.includes('kauppa') || t.includes('ruokakauppa')) {
+      variants.add('ruokakauppa');
+      variants.add('grocery store');
+      variants.add('supermarket');
+    }
+    if (t.includes('kahvila')) {
+      variants.add('kahvila');
+      variants.add('cafe');
+    }
+    if (t.includes('apteekki')) {
+      variants.add('apteekki');
+      variants.add('pharmacy');
+    }
+    if (t.includes('asema')) {
+      variants.add('asema');
+      variants.add('station');
+    }
+    if (t.includes('ravintola') || t.includes('pizza')) {
+      variants.add('ravintola');
+      variants.add('restaurant');
+    }
+  }
+
+  return [...variants].filter(Boolean);
 }
 
 function geocodePlace(query, searchMode = 'exact') {
@@ -238,39 +337,51 @@ function geocodePlace(query, searchMode = 'exact') {
       return;
     }
 
-    const params = new URLSearchParams({
-      format: 'jsonv2',
-      q,
-      limit: '1',
-      addressdetails: '1',
-      'accept-language': 'fi'
-    });
+    const variants = searchVariants(q, searchMode === 'nearby');
 
-    if (searchMode === 'nearby' && state.current) {
-      const lat = state.current.lat;
-      const lng = state.current.lng;
-      params.set('viewbox', `${lng - 0.15},${lat + 0.10},${lng + 0.15},${lat - 0.10}`);
-      params.set('bounded', '1');
-    } else if (!/finland|suomi|helsinki|espoo|vantaa|tampere|turku|oulu|jyväskylä|rovaniemi/i.test(q)) {
-      params.set('q', `${q}, Finland`);
-    }
+    const tryNext = (index) => {
+      if (index >= variants.length) {
+        reject(new Error('Paikkaa ei löytynyt'));
+        return;
+      }
 
-    fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-      headers: { 'Accept': 'application/json' }
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length) {
-          resolve({
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            label: data[0].display_name || q
-          });
-        } else {
-          reject(new Error('Paikkaa ei löytynyt'));
-        }
+      const currentQuery = variants[index];
+      const params = new URLSearchParams({
+        format: 'jsonv2',
+        q: currentQuery,
+        limit: '5',
+        addressdetails: '1',
+        'accept-language': 'fi'
+      });
+
+      if (searchMode === 'nearby' && state.current) {
+        const lat = state.current.lat;
+        const lng = state.current.lng;
+        params.set('viewbox', `${lng - 0.15},${lat + 0.10},${lng + 0.15},${lat - 0.10}`);
+        params.set('bounded', '1');
+      }
+
+      fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+        headers: { 'Accept': 'application/json' }
       })
-      .catch(reject);
+        .then((r) => r.json())
+        .then((data) => {
+          if (!Array.isArray(data) || !data.length) {
+            tryNext(index + 1);
+            return;
+          }
+
+          const best = data[0];
+          resolve({
+            lat: parseFloat(best.lat),
+            lng: parseFloat(best.lon),
+            label: best.display_name || q
+          });
+        })
+        .catch(() => tryNext(index + 1));
+    };
+
+    tryNext(0);
   });
 }
 
@@ -365,6 +476,19 @@ function drawRoute(routeGeojson) {
   updateMarkers();
 }
 
+function maybeAdvanceStep() {
+  const step = currentStep();
+  if (!step || !state.current) return;
+
+  const p = stepLocation(step, state.target);
+  const d = haversine(state.current, p);
+
+  if (d < 28 && state.activeStepIndex < state.routeSteps.length - 1) {
+    state.activeStepIndex += 1;
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
+}
+
 function updateHUD() {
   if (!state.current || !state.target) return;
 
@@ -411,19 +535,6 @@ function updateHUD() {
   }
 
   maybeAdvanceStep();
-}
-
-function maybeAdvanceStep() {
-  const step = currentStep();
-  if (!step || !state.current) return;
-
-  const p = stepLocation(step, state.target);
-  const d = haversine(state.current, p);
-
-  if (d < 28 && state.activeStepIndex < state.routeSteps.length - 1) {
-    state.activeStepIndex += 1;
-    if (navigator.vibrate) navigator.vibrate(30);
-  }
 }
 
 function reverseGeocode(latLng) {
@@ -589,6 +700,8 @@ function stopNavigation() {
   state.current = null;
   state.target = null;
   state.targetLabel = '';
+  state.lastQuery = '';
+  state.lastIntent = '';
   clearRoute();
   gpsChip.textContent = 'Sijainti: pois';
   compassChip.textContent = state.compassEnabled ? 'Kompassi: päällä' : 'Kompassi: pois';
@@ -610,16 +723,18 @@ async function startFromInput(query) {
 
   try {
     const parsed = await resolveVoiceQuery(q);
+    state.lastIntent = parsed.intent || '';
+    if (parsed.query) state.lastQuery = parsed.query;
 
     if (parsed.intent === 'stop') {
       stopNavigation();
-      speakFi('Navigointi pysäytetty.');
+      speakFi(parsed.reply || 'Navigointi pysäytetty.');
       return;
     }
 
     if (parsed.intent === 'whereami') {
       if (!state.current) {
-        speakFi('Sijaintia ei vielä ole.');
+        speakFi(parsed.reply || 'Sijaintia ei vielä ole.');
         return;
       }
       try {
@@ -642,12 +757,12 @@ async function startFromInput(query) {
     }
 
     if (parsed.intent === 'help') {
-      speakFi('Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
+      speakFi(parsed.reply || 'Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
       return;
     }
 
     if (parsed.intent === 'clarify') {
-      speakFi('Minne haluat mennä?');
+      speakFi(parsed.reply || 'Minne haluat mennä?');
       return;
     }
 
@@ -661,6 +776,8 @@ async function startFromInput(query) {
         state.target = { lat: place.lat, lng: place.lng };
         state.targetLabel = place.label || queryToUse;
         updateMarkers();
+
+        if (parsed.reply) speakFi(parsed.reply);
         await startNavigation();
       } catch (e) {
         console.error(e);
@@ -670,7 +787,7 @@ async function startFromInput(query) {
       return;
     }
 
-    speakFi('En ymmärtänyt komentoa.');
+    speakFi(parsed.reply || 'En ymmärtänyt komentoa.');
   } catch (e) {
     console.error(e);
     speakFi('Tapahtui virhe. Yritä uudestaan.');
@@ -717,16 +834,18 @@ async function handleUserText(text) {
   showHint(transcript);
 
   const parsed = await resolveVoiceQuery(transcript);
+  state.lastIntent = parsed.intent || '';
+  if (parsed.query) state.lastQuery = parsed.query;
 
   if (parsed.intent === 'stop') {
     stopNavigation();
-    speakFi('Navigointi pysäytetty.');
+    speakFi(parsed.reply || 'Navigointi pysäytetty.');
     return;
   }
 
   if (parsed.intent === 'whereami') {
     if (!state.current) {
-      speakFi('Sijaintia ei vielä ole.');
+      speakFi(parsed.reply || 'Sijaintia ei vielä ole.');
       return;
     }
     try {
@@ -749,12 +868,12 @@ async function handleUserText(text) {
   }
 
   if (parsed.intent === 'help') {
-    speakFi('Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
+    speakFi(parsed.reply || 'Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
     return;
   }
 
   if (parsed.intent === 'clarify') {
-    speakFi('Minne haluat mennä?');
+    speakFi(parsed.reply || 'Minne haluat mennä?');
     return;
   }
 
@@ -768,6 +887,8 @@ async function handleUserText(text) {
       state.target = { lat: place.lat, lng: place.lng };
       state.targetLabel = place.label || queryToUse;
       updateMarkers();
+
+      if (parsed.reply) speakFi(parsed.reply);
       await startNavigation();
     } catch (e) {
       console.error(e);
@@ -777,7 +898,7 @@ async function handleUserText(text) {
     return;
   }
 
-  speakFi('En ymmärtänyt komentoa.');
+  speakFi(parsed.reply || 'En ymmärtänyt komentoa.');
 }
 
 function startSpeechRecognition() {
@@ -913,8 +1034,8 @@ function stopRecording() {
 }
 
 async function startVoiceInput() {
-  const usedSpeechRecognition = startSpeechRecognition();
-  if (!usedSpeechRecognition) {
+  const speechOk = startSpeechRecognition();
+  if (!speechOk) {
     await startRecording();
   }
 }
@@ -932,16 +1053,18 @@ async function startFromInput(query) {
 
   try {
     const parsed = await resolveVoiceQuery(q);
+    state.lastIntent = parsed.intent || '';
+    if (parsed.query) state.lastQuery = parsed.query;
 
     if (parsed.intent === 'stop') {
       stopNavigation();
-      speakFi('Navigointi pysäytetty.');
+      speakFi(parsed.reply || 'Navigointi pysäytetty.');
       return;
     }
 
     if (parsed.intent === 'whereami') {
       if (!state.current) {
-        speakFi('Sijaintia ei vielä ole.');
+        speakFi(parsed.reply || 'Sijaintia ei vielä ole.');
         return;
       }
       try {
@@ -964,12 +1087,12 @@ async function startFromInput(query) {
     }
 
     if (parsed.intent === 'help') {
-      speakFi('Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
+      speakFi(parsed.reply || 'Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
       return;
     }
 
     if (parsed.intent === 'clarify') {
-      speakFi('Minne haluat mennä?');
+      speakFi(parsed.reply || 'Minne haluat mennä?');
       return;
     }
 
@@ -983,6 +1106,8 @@ async function startFromInput(query) {
         state.target = { lat: place.lat, lng: place.lng };
         state.targetLabel = place.label || queryToUse;
         updateMarkers();
+
+        if (parsed.reply) speakFi(parsed.reply);
         await startNavigation();
       } catch (e) {
         console.error(e);
@@ -992,7 +1117,7 @@ async function startFromInput(query) {
       return;
     }
 
-    speakFi('En ymmärtänyt komentoa.');
+    speakFi(parsed.reply || 'En ymmärtänyt komentoa.');
   } catch (e) {
     console.error(e);
     speakFi('Tapahtui virhe. Yritä uudestaan.');
@@ -1002,6 +1127,7 @@ async function startFromInput(query) {
 
 function updateLoop() {
   if (state.current && state.target) {
+    maybeAdvanceStep();
     updateHUD();
   }
   requestAnimationFrame(updateLoop);

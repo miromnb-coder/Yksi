@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Halo HUD</title>
+  <title>Arrow HUD</title>
   <style>
     :root{
       --bg:#020203;
@@ -58,7 +58,11 @@
       box-sizing: border-box;
     }
 
-    #go {
+    #dest::placeholder {
+      color: rgba(255,255,255,.42);
+    }
+
+    .btn {
       min-width: 58px;
       min-height: 52px;
       border-radius: 18px;
@@ -224,7 +228,8 @@
   <div id="app">
     <div id="top">
       <input id="dest" placeholder="Kirjoita kohde, esim. Kamppi Helsinki" />
-      <button id="go">Go</button>
+      <button class="btn" id="go">Aloita</button>
+      <button class="btn" id="mic">Mikki</button>
     </div>
 
     <div id="center">
@@ -237,15 +242,15 @@
         </div>
       </div>
       <div id="distance">—</div>
-      <div id="sub">Ready</div>
+      <div id="sub">Valmis</div>
     </div>
 
-    <div id="hint">Swipe vasen/oikea vaihtaa tilaa</div>
+    <div id="hint">Sano esimerkiksi: “Vie Kamppiin”, “Lopeta”, “Missä olen”, “Kuinka pitkä matka”</div>
 
     <div id="bottom">
-      <div class="chip" id="gps">GPS: off</div>
-      <div class="chip" id="mode">Mode: HUD</div>
-      <div class="chip" id="acc">Acc: —</div>
+      <div class="chip" id="gps">Sijainti: pois</div>
+      <div class="chip" id="compass">Kompassi: pois</div>
+      <div class="chip" id="mode">Tila: Valmis</div>
     </div>
   </div>
 
@@ -256,25 +261,74 @@
     const distanceEl = document.getElementById('distance');
     const sub = document.getElementById('sub');
     const gps = document.getElementById('gps');
+    const compass = document.getElementById('compass');
     const mode = document.getElementById('mode');
-    const acc = document.getElementById('acc');
     const hint = document.getElementById('hint');
     const dest = document.getElementById('dest');
+    const goBtn = document.getElementById('go');
+    const micBtn = document.getElementById('mic');
 
     const state = {
       current: null,
       target: null,
       watchId: null,
       heading: null,
-      mode: 'HUD',
-      lastVibeAt: 0
+      lastVibeAt: 0,
+      listening: false,
+      recognition: null,
+      voicesReady: false,
+      finnishVoice: null,
+      compassEnabled: false
     };
 
     function showHint(text) {
       hint.textContent = text;
       hint.classList.add('show');
       clearTimeout(showHint.t);
-      showHint.t = setTimeout(() => hint.classList.remove('show'), 1300);
+      showHint.t = setTimeout(() => hint.classList.remove('show'), 1500);
+    }
+
+    function setMode(text) {
+      mode.textContent = `Tila: ${text}`;
+    }
+
+    function speak(text) {
+      try {
+        if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'fi-FI';
+        u.rate = 1.0;
+        u.pitch = 1.0;
+        u.volume = 1.0;
+
+        const voices = window.speechSynthesis.getVoices();
+        const fiVoice =
+          state.finnishVoice ||
+          voices.find(v => /^fi\b/i.test(v.lang)) ||
+          voices.find(v => /finnish/i.test(v.name)) ||
+          null;
+
+        if (fiVoice) u.voice = fiVoice;
+
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
+    }
+
+    function loadVoices() {
+      if (!('speechSynthesis' in window)) return;
+      const voices = window.speechSynthesis.getVoices();
+      state.finnishVoice =
+        voices.find(v => /^fi\b/i.test(v.lang)) ||
+        voices.find(v => /finnish/i.test(v.name)) ||
+        null;
+      state.voicesReady = true;
+    }
+
+    if ('speechSynthesis' in window) {
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
     }
 
     function toRad(v) { return v * Math.PI / 180; }
@@ -323,28 +377,94 @@
       return 0;
     }
 
+    function normalizeText(t) {
+      return t
+        .toLowerCase()
+        .replace(/[.,!?]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function normalizeDestinationText(text) {
+      const t = normalizeText(text);
+
+      const map = [
+        [/kamppiin|kampissa|kamppi\b/i, 'Kamppi Helsinki'],
+        [/helsinkiin|helsingissä|helsinki\b/i, 'Helsinki'],
+        [/espooseen|espoossa|espoo\b/i, 'Espoo'],
+        [/tampereelle|tampereella|tampere\b/i, 'Tampere'],
+        [/turkuun|turussa|turku\b/i, 'Turku'],
+        [/jyväskylään|jyväskylässä|jyväskylä\b/i, 'Jyväskylä'],
+        [/ouluun|oulussa|oulu\b/i, 'Oulu'],
+        [/rovaniemelle|rovaniemellä|rovaniemi\b/i, 'Rovaniemi']
+      ];
+
+      for (const [rx, value] of map) {
+        if (rx.test(t)) return value;
+      }
+
+      return text.trim();
+    }
+
+    function extractDestinationFromCommand(text) {
+      const t = normalizeText(text);
+
+      const patterns = [
+        /^(?:vie|navigoi|ohjaa|mene|mennään|aloita|etsi)\s+(?:kohteeseen\s+|paikkaan\s+|osoitteeseen\s+)?(.+)$/i,
+        /^(?:sano|avaa)\s+(?:kohteeksi\s+)?(.+)$/i
+      ];
+
+      for (const rx of patterns) {
+        const m = t.match(rx);
+        if (m && m[1]) {
+          return normalizeDestinationText(m[1]);
+        }
+      }
+
+      return '';
+    }
+
     async function geocode(q) {
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=1`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const data = await res.json();
       if (!data.length) throw new Error('Ei löytynyt');
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      return {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+        label: data[0].display_name || q
+      };
     }
 
     async function enableCompass() {
-      if (typeof DeviceOrientationEvent !== "undefined" &&
-          typeof DeviceOrientationEvent.requestPermission === "function") {
-        const permission = await DeviceOrientationEvent.requestPermission();
-        if (permission !== "granted") return;
-      }
+      try {
+        if (state.compassEnabled) return true;
 
-      window.addEventListener("deviceorientation", (e) => {
-        if (typeof e.webkitCompassHeading === "number") {
-          state.heading = e.webkitCompassHeading;
-        } else if (e.alpha != null) {
-          state.heading = 360 - e.alpha;
+        if (typeof DeviceOrientationEvent !== "undefined" &&
+            typeof DeviceOrientationEvent.requestPermission === "function") {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission !== "granted") {
+            compass.textContent = 'Kompassi: kieltytty';
+            speak('Kompassin lupa evättiin');
+            return false;
+          }
         }
-      }, true);
+
+        window.addEventListener("deviceorientation", (e) => {
+          if (typeof e.webkitCompassHeading === "number") {
+            state.heading = e.webkitCompassHeading;
+          } else if (e.alpha != null) {
+            state.heading = 360 - e.alpha;
+          }
+        }, true);
+
+        state.compassEnabled = true;
+        compass.textContent = 'Kompassi: päällä';
+        return true;
+      } catch (e) {
+        compass.textContent = 'Kompassi: pois';
+        return false;
+      }
     }
 
     function updateHUD() {
@@ -360,42 +480,48 @@
       const rot = arrowRotationFromDiff(diff);
       arrowSvg.style.transform = `rotate(${rot}deg)`;
 
-      distanceEl.textContent = d < 20 ? 'NOW' : formatDistance(d);
-      sub.textContent = d < 20 ? 'Arrived soon' : 'Navigate';
-      gps.textContent = 'GPS: on';
-      acc.textContent = state.current.accuracy ? `Acc: ±${Math.round(state.current.accuracy)}m` : 'Acc: —';
+      distanceEl.textContent = d < 20 ? 'NYT' : formatDistance(d);
+      sub.textContent = d < 20 ? 'Perillä pian' : 'Navigoi';
+      gps.textContent = 'Sijainti: päällä';
 
-      const show = d < 120 || Math.abs(diff) > 18;
-      center.classList.toggle('show', show || state.mode === 'DEBUG');
+      const show = d < 120 || Math.abs(diff) > 18 || state.listening;
+      center.classList.toggle('show', show);
 
       if (d < 20 && Date.now() - state.lastVibeAt > 1200) {
         if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
         state.lastVibeAt = Date.now();
       }
 
-      if (d < 20) {
-        arrowWrap.style.transform = 'scale(1.06)';
-      } else {
-        arrowWrap.style.transform = 'scale(1)';
-      }
+      arrowWrap.style.transform = d < 20 ? 'scale(1.06)' : 'scale(1)';
     }
 
-    async function start() {
-      const q = dest.value.trim();
+    async function startNavigation(rawInput) {
+      const q = (rawInput || dest.value || '').trim();
       if (!q) {
         showHint('Kirjoita kohde ensin');
+        speak('Kirjoita kohde ensin');
         return;
       }
 
-      showHint('Haetaan sijainti…');
-      await enableCompass();
+      const compassOk = await enableCompass();
+      if (!compassOk) {
+        showHint('Kompassin lupa puuttuu');
+      }
 
-      state.target = await geocode(q);
+      setMode('Navigointi');
+      showHint('Haetaan kohde');
+      speak(`Haetaan kohde ${q}`);
+
+      const target = await geocode(q);
+      state.target = target;
 
       if (!navigator.geolocation) {
-        showHint('GPS ei ole käytössä');
+        showHint('Sijaintia ei tueta');
+        speak('Sijaintia ei tueta tässä selaimessa');
         return;
       }
+
+      if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
 
       navigator.geolocation.getCurrentPosition((pos) => {
         state.current = {
@@ -403,25 +529,26 @@
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
-        gps.textContent = 'GPS: on';
+        gps.textContent = 'Sijainti: päällä';
         updateHUD();
+        speak(`Navigointi aloitettu kohteeseen ${q}`);
       }, () => {
-        gps.textContent = 'GPS: off';
+        gps.textContent = 'Sijainti: pois';
         showHint('Sijaintilupa puuttuu');
+        speak('Sijaintilupa puuttuu');
       }, {
         enableHighAccuracy: true,
         timeout: 12000,
         maximumAge: 0
       });
 
-      if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
       state.watchId = navigator.geolocation.watchPosition((pos) => {
         state.current = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
-        gps.textContent = 'GPS: on';
+        gps.textContent = 'Sijainti: päällä';
         updateHUD();
       }, () => {}, {
         enableHighAccuracy: true,
@@ -430,14 +557,164 @@
       });
     }
 
-    document.getElementById('go').onclick = () => {
-      start().catch(err => {
+    function stopNavigation() {
+      if (state.watchId) {
+        navigator.geolocation.clearWatch(state.watchId);
+        state.watchId = null;
+      }
+      state.target = null;
+      state.listening = false;
+      micBtn.textContent = 'Mikki';
+      gps.textContent = 'Sijainti: pois';
+      setMode('Valmis');
+      center.classList.remove('show');
+      showHint('Pysäytetty');
+      speak('Navigointi pysäytetty');
+    }
+
+    function repeatStatus() {
+      if (!state.current || !state.target) {
+        speak('Ei aktiivista navigointia');
+        return;
+      }
+      const d = haversine(state.current, state.target);
+      if (d < 20) {
+        speak('Olet perillä');
+      } else {
+        speak(`Matkaa on noin ${formatDistance(d)}`);
+      }
+    }
+
+    function whereAmI() {
+      if (!state.current) {
+        speak('Sijaintia ei vielä ole');
+        return;
+      }
+      speak(`Sijaintisi tarkkuus on noin ${Math.round(state.current.accuracy || 0)} metriä`);
+    }
+
+    function helpCommand() {
+      speak('Voit sanoa: vie Kamppiin, lopeta, missä olen, kuinka pitkä matka, toista');
+    }
+
+    function parseCommand(text) {
+      const t = normalizeText(text);
+
+      if (t.includes('lopeta') || t.includes('pysäytä') || t.includes('pysayta') || t.includes('seis')) {
+        stopNavigation();
+        return;
+      }
+
+      if (t.includes('missä olen') || t.includes('missä mä oon') || t.includes('sijainti') || t.includes('missä olen nyt')) {
+        whereAmI();
+        return;
+      }
+
+      if (t.includes('kuinka pitkä matka') || t.includes('kuinka pitkä') || t.includes('paljonko matkaa') || t.includes('matka') || t.includes('jäljellä')) {
+        repeatStatus();
+        return;
+      }
+
+      if (t.includes('toista') || t.includes('uudestaan') || t.includes('repeat')) {
+        repeatStatus();
+        return;
+      }
+
+      if (t.includes('apu') || t.includes('mitä voin sanoa') || t.includes('ohje')) {
+        helpCommand();
+        return;
+      }
+
+      const place = extractDestinationFromCommand(t);
+      if (place) {
+        dest.value = place;
+        startNavigation(place);
+        return;
+      }
+
+      speak('En ymmärtänyt komentoa');
+      showHint('Komento ei mennyt perille');
+    }
+
+    function startVoice() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        showHint('Puheentunnistus ei ole käytössä');
+        speak('Tämä selain ei tue puheentunnistusta');
+        return;
+      }
+
+      if (state.recognition && state.listening) {
+        state.listening = false;
+        micBtn.textContent = 'Mikki';
+        setMode(state.target ? 'Navigointi' : 'Valmis');
+        try { state.recognition.stop(); } catch (e) {}
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      state.recognition = recognition;
+      recognition.lang = 'fi-FI';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        state.listening = true;
+        micBtn.textContent = 'Kuuntelen';
+        setMode('Kuuntelen');
+        showHint('Kuuntelen');
+        speak('Kuuntelen');
+        center.classList.add('show');
+      };
+
+      recognition.onend = () => {
+        state.listening = false;
+        micBtn.textContent = 'Mikki';
+        setMode(state.target ? 'Navigointi' : 'Valmis');
+        if (!state.target) {
+          center.classList.remove('show');
+        }
+      };
+
+      recognition.onerror = (e) => {
+        state.listening = false;
+        micBtn.textContent = 'Mikki';
+        setMode(state.target ? 'Navigointi' : 'Valmis');
+        showHint('Ääni ei onnistunut');
+        if (e && e.error) {
+          speak('Puheentunnistus epäonnistui');
+        }
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[event.results.length - 1][0].transcript || '';
+        showHint(transcript);
+        parseCommand(transcript);
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {
+        showHint('Puhe ei käynnistynyt');
+      }
+    }
+
+    goBtn.onclick = () => {
+      startNavigation(dest.value).catch(err => {
         console.error(err);
         showHint('Virhe');
+        speak('Virhe');
       });
     };
 
+    micBtn.onclick = () => {
+      startVoice();
+    };
+
     dest.value = 'Kamppi Helsinki';
+    setMode('Valmis');
+    showHint('Sano esimerkiksi: “Vie Kamppiin”');
 
     let sx = 0, sy = 0, tracking = false;
     document.addEventListener('touchstart', (e) => {
@@ -455,17 +732,15 @@
       const dy = t.clientY - sy;
 
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 35) {
-        state.mode = dx > 0 ? 'MAP' : 'HUD';
-        mode.textContent = `Mode: ${state.mode}`;
-        showHint(state.mode === 'MAP' ? 'Map mode' : 'HUD mode');
+        const newMode = dx > 0 ? 'Kartta' : 'HUD';
+        setMode(newMode);
+        showHint(newMode === 'Kartta' ? 'Kartta-tila' : 'HUD-tila');
       }
     }, { passive: true });
 
     document.body.addEventListener('click', () => {
       enableCompass();
     }, { once: true });
-
-    showHint('Ready');
   </script>
 </body>
 </html>

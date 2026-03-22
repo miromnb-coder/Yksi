@@ -23,7 +23,6 @@ const state = {
 
 let map;
 let voiceRecognition = null;
-let mapReady = false;
 
 const centerEl = $('center');
 const arrowSvg = $('arrowSvg');
@@ -99,6 +98,7 @@ function arrowRotationFromDiff(d) {
 function speakFi(text) {
   const clean = String(text || '').trim();
   if (!clean || !('speechSynthesis' in window)) return;
+
   try {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(clean);
@@ -106,12 +106,14 @@ function speakFi(text) {
     u.rate = 0.96;
     u.pitch = 1.0;
     u.volume = 1.0;
+
     const voices = window.speechSynthesis.getVoices();
     const voice =
       voices.find(v => /^fi\b/i.test(v.lang)) ||
       voices.find(v => /finn/i.test(v.name)) ||
       voices.find(v => /siri/i.test(v.name)) ||
       null;
+
     if (voice) u.voice = voice;
     window.speechSynthesis.speak(u);
   } catch {}
@@ -211,48 +213,59 @@ async function resolveVoiceQuery(text) {
   }
 }
 
-function geocodePlace(query, searchMode = 'exact') {
-  return new Promise((resolve, reject) => {
-    const q = String(query || '').trim();
-    if (!q) {
-      reject(new Error('Tyhjä kohde'));
-      return;
-    }
+async function searchPlace(query) {
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=fi`
+  );
+  const data = await res.json();
 
-    const params = new URLSearchParams({
-      format: 'jsonv2',
-      q,
-      limit: '1',
-      addressdetails: '1',
-      'accept-language': 'fi'
-    });
+  if (!data || data.length === 0) {
+    speakFi('En löytänyt paikkaa');
+    return null;
+  }
 
-    if (searchMode === 'nearby' && state.current) {
-      const lat = state.current.lat;
-      const lng = state.current.lng;
-      params.set('viewbox', `${lng - 0.15},${lat + 0.10},${lng + 0.15},${lat - 0.10}`);
-      params.set('bounded', '1');
-    } else if (!/finland|suomi|helsinki|espoo|vantaa|tampere|turku|oulu|jyväskylä|rovaniemi/i.test(q)) {
-      params.set('q', `${q}, Finland`);
-    }
+  return {
+    lat: parseFloat(data[0].lat),
+    lng: parseFloat(data[0].lon),
+    name: data[0].display_name
+  };
+}
 
-    fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-      headers: { 'Accept': 'application/json' }
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length) {
-          resolve({
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            label: data[0].display_name || q
-          });
-        } else {
-          reject(new Error('Paikkaa ei löytynyt'));
-        }
-      })
-      .catch(reject);
+async function geocodePlace(query, searchMode = 'exact') {
+  const q = String(query || '').trim();
+  if (!q) throw new Error('Tyhjä kohde');
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    q,
+    limit: '1',
+    addressdetails: '1',
+    'accept-language': 'fi'
   });
+
+  if (searchMode === 'nearby' && state.current) {
+    const lat = state.current.lat;
+    const lng = state.current.lng;
+    params.set('viewbox', `${lng - 0.15},${lat + 0.10},${lng + 0.15},${lat - 0.10}`);
+    params.set('bounded', '1');
+  } else if (!/finland|suomi|helsinki|espoo|vantaa|tampere|turku|oulu|jyväskylä|rovaniemi/i.test(q)) {
+    params.set('q', `${q}, Finland`);
+  }
+
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: { 'Accept': 'application/json' }
+  });
+
+  const data = await res.json();
+  if (Array.isArray(data) && data.length) {
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      label: data[0].display_name || q
+    };
+  }
+
+  throw new Error('Paikkaa ei löytynyt');
 }
 
 function getRoute(from, to) {
@@ -308,6 +321,8 @@ function drawRoute(routeGeojson) {
 }
 
 function updateMarkers() {
+  if (!map) return;
+
   if (state.current) {
     const pos = [state.current.lat, state.current.lng];
     if (!state.currentMarker) {
@@ -388,19 +403,17 @@ function updateHUD() {
   if (state.mapVisible && state.current) {
     map.panTo([state.current.lat, state.current.lng], { animate: true });
   }
+
+  maybeAdvanceStep();
 }
 
 function reverseGeocode(latLng) {
-  return new Promise((resolve, reject) => {
-    const geocoder = L.Control.Geocoder ? null : null;
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latLng.lat}&lon=${latLng.lng}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.display_name) resolve(data.display_name);
-        else reject(new Error('Ei löytynyt'));
-      })
-      .catch(reject);
-  });
+  return fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latLng.lat}&lon=${latLng.lng}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.display_name) return data.display_name;
+      throw new Error('Ei löytynyt');
+    });
 }
 
 function getLocationNow(timeoutMs = 8000) {
@@ -640,10 +653,12 @@ async function startFromInput(query) {
       try {
         const place = parsed.nearby
           ? await geocodePlace(queryToUse, 'nearby')
-          : await geocodePlace(queryToUse, 'exact');
+          : await searchPlace(queryToUse);
+
+        if (!place) return;
 
         state.target = { lat: place.lat, lng: place.lng };
-        state.targetLabel = place.label || queryToUse;
+        state.targetLabel = place.name || queryToUse;
         updateMarkers();
         await startNavigation();
       } catch (e) {
@@ -826,10 +841,12 @@ async function handleUserText(text) {
     try {
       const place = parsed.nearby
         ? await geocodePlace(queryToUse, 'nearby')
-        : await geocodePlace(queryToUse, 'exact');
+        : await searchPlace(queryToUse);
+
+      if (!place) return;
 
       state.target = { lat: place.lat, lng: place.lng };
-      state.targetLabel = place.label || queryToUse;
+      state.targetLabel = place.name || queryToUse;
       updateMarkers();
       await startNavigation();
     } catch (e) {
@@ -853,10 +870,10 @@ function initLeafletMap() {
     maxZoom: 19
   }).addTo(map);
 
-  mapReady = true;
   setMapVisible(true);
   showHint('Sano: “Vie Kamppiin”');
   setMode('Valmis');
+  updateLoop();
 }
 
 function updateLoop() {
@@ -925,5 +942,4 @@ document.addEventListener('touchend', (e) => {
 
 window.addEventListener('load', () => {
   initLeafletMap();
-  updateLoop();
 });

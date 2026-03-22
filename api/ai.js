@@ -29,7 +29,7 @@ export async function POST(req) {
     }
 
     const systemPrompt = `
-Olet suomalainen navigaatio-AI.
+Olet suomalainen keskusteleva navigaatio-AI.
 
 Palauta AINA vain yksi JSON-objekti tässä muodossa:
 {
@@ -90,7 +90,6 @@ Säännöt:
     }
 
     const content = String(data?.choices?.[0]?.message?.content || '').trim();
-
     const parsed = extractJsonObject(content);
 
     if (!parsed) {
@@ -113,7 +112,7 @@ Säännöt:
       nearby,
       reply
     });
-  } catch (error) {
+  } catch {
     return Response.json(
       {
         intent: 'clarify',

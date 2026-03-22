@@ -3,24 +3,360 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Halo AI Free</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="/style.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/script.js" defer></script>
+  <title>Halo AI AR</title>
+  <style>
+    :root{
+      --bg:#020203;
+      --glass:rgba(255,255,255,.08);
+      --line:rgba(255,255,255,.12);
+      --text:rgba(255,255,255,.96);
+      --muted:rgba(255,255,255,.62);
+      --dim:rgba(255,255,255,.38);
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #cam {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+      transform: scaleX(-1);
+      filter: contrast(1.02) saturate(0.92) brightness(0.78);
+    }
+
+    #scrim {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 50% 45%, transparent 22%, rgba(0,0,0,.48) 100%),
+        linear-gradient(180deg, rgba(0,0,0,.12), rgba(0,0,0,.24));
+    }
+
+    #grain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .14;
+      mix-blend-mode: soft-light;
+      background-image:
+        linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+      background-size: 3px 3px;
+    }
+
+    #app {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      z-index: 5;
+    }
+
+    #topBar {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      z-index: 20;
+    }
+
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(18px) saturate(1.2);
+      -webkit-backdrop-filter: blur(18px) saturate(1.2);
+      box-shadow: 0 10px 36px rgba(0,0,0,.25);
+    }
+
+    #search {
+      flex: 1;
+      min-height: 50px;
+      border-radius: 18px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #search::before {
+      content: "⌕";
+      color: rgba(255,255,255,.58);
+      font-size: 18px;
+      flex: 0 0 auto;
+    }
+
+    #dest {
+      width: 100%;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 15px;
+      min-width: 0;
+    }
+
+    #dest::placeholder {
+      color: rgba(255,255,255,.42);
+    }
+
+    .btn {
+      min-width: 58px;
+      min-height: 50px;
+      padding: 0 14px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.10);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    #center {
+      position: absolute;
+      left: 50%;
+      top: 49%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      opacity: 0;
+      transition: opacity 220ms ease;
+      pointer-events: none;
+      text-align: center;
+      z-index: 12;
+    }
+
+    #center.show {
+      opacity: 1;
+    }
+
+    .ring {
+      width: 152px;
+      height: 152px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      position: relative;
+      border: 1px solid rgba(255,255,255,.12);
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,.11), rgba(255,255,255,.03) 42%, transparent 68%);
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,.05),
+        0 0 44px rgba(255,255,255,.06);
+      overflow: hidden;
+    }
+
+    .ring::before {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      border: 1px dashed rgba(255,255,255,.16);
+      opacity: .38;
+      animation: spin 18s linear infinite;
+    }
+
+    .ring::after {
+      content: "";
+      position: absolute;
+      inset: -20px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, transparent 48%, rgba(255,255,255,.10) 49%, transparent 51%);
+      opacity: .42;
+      animation: breathe 3.2s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes breathe {
+      0%,100% { transform: scale(.82); opacity: .38; }
+      50% { transform: scale(.90); opacity: .68; }
+    }
+
+    .arrowWrap {
+      width: 88px;
+      height: 88px;
+      border-radius: 28px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      z-index: 2;
+      background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.12),
+        0 14px 28px rgba(0,0,0,.24);
+      transition: transform 180ms ease;
+      will-change: transform;
+    }
+
+    .arrowSvg {
+      width: 54px;
+      height: 54px;
+      transform-origin: 50% 50%;
+      transform: rotate(0deg);
+      transition: transform 220ms cubic-bezier(.2,.8,.2,1);
+      filter: drop-shadow(0 0 10px rgba(255,255,255,.10));
+    }
+
+    #distance {
+      min-width: 124px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.08);
+      font-size: 18px;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    #sub {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: .35px;
+      text-transform: uppercase;
+    }
+
+    #micState {
+      position: absolute;
+      left: 50%;
+      top: 14px;
+      transform: translateX(-50%);
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.10);
+      color: rgba(255,255,255,.78);
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 180ms ease;
+      z-index: 22;
+    }
+
+    #micState.show {
+      opacity: 1;
+    }
+
+    #hint {
+      position: absolute;
+      left: 50%;
+      bottom: 122px;
+      transform: translateX(-50%);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid var(--line);
+      color: rgba(255,255,255,.78);
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 180ms ease;
+      pointer-events: none;
+      text-align: center;
+      max-width: calc(100vw - 32px);
+      z-index: 22;
+    }
+
+    #hint.show {
+      opacity: 1;
+    }
+
+    #bottom {
+      margin: 0 12px 12px;
+      padding: 12px;
+      border-radius: 24px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.12);
+      backdrop-filter: blur(18px) saturate(1.2);
+      -webkit-backdrop-filter: blur(18px) saturate(1.2);
+      box-shadow: 0 10px 36px rgba(0,0,0,.28);
+      display: grid;
+      gap: 10px;
+      z-index: 20;
+    }
+
+    #chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+
+    .chip {
+      flex: 1;
+      min-width: 0;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.10);
+      color: var(--text);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #progress {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.08);
+    }
+
+    #bar {
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(255,255,255,.42), rgba(255,255,255,.92));
+      box-shadow: 0 0 18px rgba(255,255,255,.18);
+      transition: width 220ms ease;
+    }
+
+    #legend {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+      color: rgba(255,255,255,.54);
+    }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <div id="map"></div>
-    <div id="scrim"></div>
+  <video id="cam" autoplay playsinline muted></video>
+  <div id="scrim"></div>
+  <div id="grain"></div>
 
+  <div id="app">
     <div id="micState">Kuuntelen…</div>
 
     <div id="topBar">
       <div id="search" class="glass">
         <input id="dest" placeholder="Kirjoita kohde, esim. Kamppi Helsinki" />
       </div>
-      <button class="btn" id="goBtn">Aloita</button>
+      <button class="btn" id="startBtn">Aloita</button>
       <button class="btn" id="micBtn">Mikki</button>
       <button class="btn" id="stopBtn">Lopeta</button>
     </div>
@@ -48,11 +384,1047 @@
       </div>
       <div id="progress"><div id="bar"></div></div>
       <div id="legend">
-        <div>Swipe vasen/oikea: HUD / Kartta</div>
+        <div>Swipe vasen/oikea: HUD / Kamera</div>
         <div>Puhe: suomi</div>
-        <div>Ilmainen kartta</div>
+        <div>Nominatim + OSRM</div>
       </div>
     </div>
   </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const els = {
+      cam: $('cam'),
+      center: $('center'),
+      arrowSvg: $('arrowSvg'),
+      arrowWrap: $('arrowWrap'),
+      distance: $('distance'),
+      sub: $('sub'),
+      gpsChip: $('gpsChip'),
+      compassChip: $('compassChip'),
+      modeChip: $('modeChip'),
+      bar: $('bar'),
+      hint: $('hint'),
+      micState: $('micState'),
+      dest: $('dest'),
+      startBtn: $('startBtn'),
+      micBtn: $('micBtn'),
+      stopBtn: $('stopBtn')
+    };
+
+    const state = {
+      cameraOn: false,
+      locationOn: false,
+      compassOn: false,
+      listening: false,
+      recording: false,
+      speechRec: null,
+      recorder: null,
+      stream: null,
+      chunks: [],
+      current: null,
+      target: null,
+      targetLabel: '',
+      lastQuery: '',
+      lastIntent: '',
+      lastHeading: null,
+      watchId: null,
+      route: null,
+      routeSteps: [],
+      activeStepIndex: 0,
+      lastVibeAt: 0,
+      lastRouteAt: 0,
+      routeLoading: false,
+      lastSpeechVoice: null,
+      routeMode: 'idle',
+      mapVisible: true
+    };
+
+    const ALIASES = {
+      kamppi: ['Kamppi Helsinki', 'Kamppi'],
+      kampiin: ['Kamppi Helsinki', 'Kamppi'],
+      stockmann: ['Stockmann Helsinki'],
+      stokka: ['Stockmann Helsinki'],
+      stokkalle: ['Stockmann Helsinki'],
+      jumbo: ['Jumbo Vantaa'],
+      jumbolle: ['Jumbo Vantaa'],
+      rautatieasema: ['Helsingin päärautatieasema', 'Helsingin rautatieasema'],
+      päärautatieasema: ['Helsingin päärautatieasema'],
+      kauppa: ['ruokakauppa'],
+      ruokakauppa: ['ruokakauppa'],
+      kahvila: ['kahvila'],
+      apteekki: ['apteekki'],
+      ravintola: ['ravintola'],
+      pizza: ['ravintola'],
+      prisma: ['Prisma'],
+      citymarket: ['K-Citymarket'],
+      kmarket: ['K-Market']
+    };
+
+    function showHint(text, ms = 1800) {
+      els.hint.textContent = text;
+      els.hint.classList.add('show');
+      clearTimeout(showHint.t);
+      showHint.t = setTimeout(() => els.hint.classList.remove('show'), ms);
+    }
+
+    function setMode(text) {
+      els.modeChip.textContent = `Tila: ${text}`;
+    }
+
+    function toRad(v) { return v * Math.PI / 180; }
+    function toDeg(v) { return v * 180 / Math.PI; }
+
+    function haversine(a, b) {
+      const R = 6371000;
+      const dLat = toRad(b.lat - a.lat);
+      const dLon = toRad(b.lng - a.lng);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(x));
+    }
+
+    function bearing(from, to) {
+      const φ1 = toRad(from.lat), φ2 = toRad(to.lat);
+      const λ1 = toRad(from.lng), λ2 = toRad(to.lng);
+      const y = Math.sin(λ2 - λ1) * Math.cos(φ2);
+      const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
+      return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function diffAngle(a, b) {
+      let d = ((a - b) % 360 + 360) % 360;
+      if (d > 180) d -= 360;
+      return d;
+    }
+
+    function formatDistance(m) {
+      if (m == null || Number.isNaN(m)) return '—';
+      if (m < 1000) return `${Math.round(m)} m`;
+      return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+    }
+
+    function arrowRotationFromDiff(d) {
+      if (Math.abs(d) < 8) return 0;
+      if (d >= 8 && d < 30) return 25;
+      if (d >= 30 && d < 60) return 75;
+      if (d >= 60 && d < 120) return 135;
+      if (d >= 120) return 180;
+      if (d <= -8 && d > -30) return -25;
+      if (d <= -30 && d > -60) return -75;
+      if (d <= -60 && d > -120) return -135;
+      if (d <= -120) return 180;
+      return 0;
+    }
+
+    function bestFinnishVoice() {
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      return voices.find(v => /^fi\b/i.test(v.lang)) ||
+             voices.find(v => /finn/i.test(v.name)) ||
+             voices.find(v => /siri/i.test(v.name)) ||
+             voices.find(v => v.default) ||
+             null;
+    }
+
+    function speak(text) {
+      const clean = String(text || '').trim();
+      if (!clean || !('speechSynthesis' in window)) return;
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(clean);
+        u.lang = 'fi-FI';
+        u.rate = 0.94;
+        u.pitch = 1.0;
+        u.volume = 1.0;
+        const voice = bestFinnishVoice();
+        if (voice) u.voice = voice;
+        state.lastSpeechVoice = voice || null;
+        window.speechSynthesis.speak(u);
+      } catch {}
+    }
+
+    function normalizeText(t) {
+      return String(t || '')
+        .toLowerCase()
+        .replace(/[.,!?]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function localParseCommand(text) {
+      const t = normalizeText(text);
+
+      if (t.includes('lopeta') || t.includes('pysäytä') || t.includes('pysayta') || t.includes('seis')) {
+        return { intent: 'stop', reply: 'Navigointi pysäytetty.', query: '', nearby: false };
+      }
+
+      if (t.includes('missä olen') || t.includes('missä mä oon') || t.includes('sijainti')) {
+        return { intent: 'whereami', reply: 'Kerron sijaintisi.', query: '', nearby: false };
+      }
+
+      if (t.includes('kuinka pitkä matka') || t.includes('paljonko matkaa') || t.includes('matka')) {
+        return { intent: 'status', reply: 'Katsotaan matka.', query: '', nearby: false };
+      }
+
+      if (t.includes('apu') || t.includes('ohje')) {
+        return {
+          intent: 'help',
+          reply: 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.',
+          query: '',
+          nearby: false
+        };
+      }
+
+      const nearbyKeywords = ['lähin', 'lähimpään', 'ruokakauppa', 'kauppa', 'kahvila', 'asema', 'apteekki', 'ravintola', 'pizza'];
+      const nearby = nearbyKeywords.some(k => t.includes(k));
+
+      if (nearby) {
+        let query = 'kohde';
+        if (t.includes('ruokakauppa') || t.includes('kauppa')) query = 'ruokakauppa';
+        else if (t.includes('kahvila')) query = 'kahvila';
+        else if (t.includes('apteekki')) query = 'apteekki';
+        else if (t.includes('asema')) query = 'asema';
+        else if (t.includes('ravintola') || t.includes('pizza')) query = 'ravintola';
+
+        return {
+          intent: 'navigate',
+          reply: `Selvä, etsitään ${query}.`,
+          query,
+          nearby: true
+        };
+      }
+
+      for (const [needle, values] of Object.entries(ALIASES)) {
+        if (t === needle || t.includes(` ${needle} `) || t.startsWith(needle) || t.endsWith(needle)) {
+          return {
+            intent: 'navigate',
+            reply: `Selvä, etsitään ${values[0]}.`,
+            query: values[0],
+            nearby: false
+          };
+        }
+      }
+
+      if (t.startsWith('vie ') || t.startsWith('mene ') || t.startsWith('navigoi ') || t.startsWith('ohjaa ')) {
+        const cleaned = t
+          .replace(/^(vie|mene|navigoi|ohjaa)\s+/i, '')
+          .replace(/^(kohteeseen|paikkaan|osoitteeseen)\s+/i, '')
+          .trim();
+
+        const query = cleaned || state.lastQuery || 'kohde';
+        return {
+          intent: 'navigate',
+          reply: `Selvä, etsitään ${query}.`,
+          query,
+          nearby: false
+        };
+      }
+
+      if (t.includes('sinne') || t.includes('sama paikka') || t.includes('samaan paikkaan')) {
+        return {
+          intent: 'navigate',
+          reply: state.lastQuery ? `Selvä, etsitään sama paikka: ${state.lastQuery}.` : 'Minne haluat mennä?',
+          query: state.lastQuery,
+          nearby: false
+        };
+      }
+
+      return {
+        intent: 'clarify',
+        reply: 'En ymmärtänyt täysin. Sano esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.',
+        query: '',
+        nearby: false
+      };
+    }
+
+    function normalizeAiResult(data) {
+      if (!data || typeof data !== 'object') return null;
+      const intent = String(data.intent || '').trim() || 'clarify';
+      const query = String(data.query || data.destination_query || '').trim();
+      const nearby = Boolean(data.nearby ?? (String(data.search_mode || '').toLowerCase() === 'nearby'));
+      const reply = String(data.reply || '').trim();
+      return { intent, query, nearby, reply };
+    }
+
+    async function callAI(text) {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          currentLocation: state.current,
+          activeTarget: state.targetLabel,
+          lastQuery: state.lastQuery,
+          lastIntent: state.lastIntent
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'AI-virhe');
+      return data;
+    }
+
+    async function resolveCommand(text) {
+      try {
+        const ai = await callAI(text);
+        const parsed = normalizeAiResult(ai);
+        if (parsed) return parsed;
+      } catch {}
+      return localParseCommand(text);
+    }
+
+    function searchVariants(rawQuery, nearby) {
+      const t = normalizeText(rawQuery);
+      const variants = new Set();
+
+      if (!t) return [];
+
+      variants.add(rawQuery.trim());
+
+      if (ALIASES[t]) {
+        for (const v of ALIASES[t]) variants.add(v);
+      }
+
+      if (!/finland|suomi|helsinki|espoo|vantaa|tampere|turku|oulu|jyväskylä|rovaniemi/i.test(rawQuery)) {
+        variants.add(`${rawQuery}, Finland`);
+      }
+
+      if (nearby) {
+        if (t.includes('kauppa') || t.includes('ruokakauppa')) {
+          variants.add('ruokakauppa');
+          variants.add('grocery store');
+          variants.add('supermarket');
+        }
+        if (t.includes('kahvila')) {
+          variants.add('kahvila');
+          variants.add('cafe');
+        }
+        if (t.includes('apteekki')) {
+          variants.add('apteekki');
+          variants.add('pharmacy');
+        }
+        if (t.includes('asema')) {
+          variants.add('asema');
+          variants.add('station');
+        }
+        if (t.includes('ravintola') || t.includes('pizza')) {
+          variants.add('ravintola');
+          variants.add('restaurant');
+        }
+      }
+
+      return [...variants].filter(Boolean);
+    }
+
+    function geocodePlace(query, nearby = false) {
+      return new Promise((resolve, reject) => {
+        const q = String(query || '').trim();
+        if (!q) {
+          reject(new Error('Tyhjä kohde'));
+          return;
+        }
+
+        const variants = searchVariants(q, nearby);
+
+        const tryNext = (index) => {
+          if (index >= variants.length) {
+            reject(new Error('Paikkaa ei löytynyt'));
+            return;
+          }
+
+          const currentQuery = variants[index];
+          const params = new URLSearchParams({
+            format: 'jsonv2',
+            q: currentQuery,
+            limit: '5',
+            addressdetails: '1',
+            'accept-language': 'fi'
+          });
+
+          if (nearby && state.current) {
+            const lat = state.current.lat;
+            const lng = state.current.lng;
+            params.set('viewbox', `${lng - 0.15},${lat + 0.10},${lng + 0.15},${lat - 0.10}`);
+            params.set('bounded', '1');
+          }
+
+          fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+            headers: { 'Accept': 'application/json' }
+          })
+            .then(r => r.json())
+            .then((data) => {
+              if (!Array.isArray(data) || !data.length) {
+                tryNext(index + 1);
+                return;
+              }
+
+              const best = data[0];
+              resolve({
+                lat: parseFloat(best.lat),
+                lng: parseFloat(best.lon),
+                label: best.display_name || q
+              });
+            })
+            .catch(() => tryNext(index + 1));
+        };
+
+        tryNext(0);
+      });
+    }
+
+    function getRoute(from, to) {
+      const url = `https://router.project-osrm.org/route/v1/foot/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&steps=true`;
+      return fetch(url)
+        .then(r => r.json())
+        .then((data) => {
+          if (!data.routes || !data.routes.length) throw new Error('Reittiä ei löytynyt');
+          return data.routes[0];
+        });
+    }
+
+    function extractSteps(route) {
+      const steps = [];
+      for (const leg of route.legs || []) {
+        for (const step of leg.steps || []) steps.push(step);
+      }
+      return steps;
+    }
+
+    function stepLocation(step, fallback) {
+      const loc = step?.maneuver?.location;
+      if (Array.isArray(loc) && loc.length >= 2) {
+        return { lat: loc[1], lng: loc[0] };
+      }
+      return fallback;
+    }
+
+    function currentStep() {
+      if (!state.routeSteps.length) return null;
+      return state.routeSteps[Math.min(state.activeStepIndex, state.routeSteps.length - 1)];
+    }
+
+    function setCameraVisible(v) {
+      els.cam.style.opacity = v ? '1' : '0.08';
+      state.mapVisible = v;
+    }
+
+    async function startCamera() {
+      if (state.cameraOn) return true;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        showHint('Kamera ei ole käytettävissä');
+        return false;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' }
+          },
+          audio: false
+        });
+        els.cam.srcObject = stream;
+        state.stream = stream;
+        state.cameraOn = true;
+        setCameraVisible(true);
+        return true;
+      } catch (e) {
+        console.error(e);
+        showHint('Kamera ei auennut');
+        return false;
+      }
+    }
+
+    function stopCamera() {
+      if (state.stream) {
+        state.stream.getTracks().forEach(t => t.stop());
+        state.stream = null;
+      }
+      els.cam.srcObject = null;
+      state.cameraOn = false;
+    }
+
+    async function requestCompass() {
+      if (state.compassOn) return true;
+
+      try {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission !== 'granted') {
+            els.compassChip.textContent = 'Kompassi: kieltty';
+            return false;
+          }
+        }
+
+        window.addEventListener('deviceorientation', (e) => {
+          if (typeof e.webkitCompassHeading === 'number') {
+            state.lastHeading = e.webkitCompassHeading;
+          } else if (e.alpha != null) {
+            state.lastHeading = 360 - e.alpha;
+          }
+        }, true);
+
+        state.compassOn = true;
+        els.compassChip.textContent = 'Kompassi: päällä';
+        return true;
+      } catch (e) {
+        console.error(e);
+        els.compassChip.textContent = 'Kompassi: pois';
+        return false;
+      }
+    }
+
+    function getLocationNow(timeoutMs = 9000) {
+      if (!navigator.geolocation) return Promise.reject(new Error('Sijaintia ei tueta'));
+
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Sijainti ei löytynyt ajoissa')), timeoutMs);
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            clearTimeout(timer);
+            state.current = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy
+            };
+            els.gpsChip.textContent = 'Sijainti: päällä';
+            resolve(state.current);
+          },
+          (err) => {
+            clearTimeout(timer);
+            reject(err);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: timeoutMs,
+            maximumAge: 0
+          }
+        );
+      });
+    }
+
+    function watchLocation() {
+      if (!navigator.geolocation) return;
+      if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
+
+      state.watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          state.current = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          };
+          els.gpsChip.textContent = 'Sijainti: päällä';
+          updateHUD();
+        },
+        () => {},
+        {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 10000
+        }
+      );
+    }
+
+    function clearRoute() {
+      state.route = null;
+      state.routeSteps = [];
+      state.activeStepIndex = 0;
+    }
+
+    async function buildRoute() {
+      if (!state.current || !state.target) return;
+      const route = await getRoute(state.current, state.target);
+      state.route = route;
+      state.routeSteps = extractSteps(route);
+      state.activeStepIndex = 0;
+      state.lastRouteAt = Date.now();
+    }
+
+    function maybeAdvanceStep() {
+      const step = currentStep();
+      if (!step || !state.current) return;
+      const p = stepLocation(step, state.target);
+      const d = haversine(state.current, p);
+      if (d < 28 && state.activeStepIndex < state.routeSteps.length - 1) {
+        state.activeStepIndex += 1;
+        if (navigator.vibrate) navigator.vibrate(28);
+      }
+    }
+
+    async function maybeReroute() {
+      if (!state.target || !state.current || state.routeLoading) return;
+      if (Date.now() - state.lastRouteAt < 18000) return;
+      const step = currentStep();
+      if (!step) return;
+      const p = stepLocation(step, state.target);
+      const dStep = haversine(state.current, p);
+      if (dStep > 180) {
+        state.routeLoading = true;
+        try {
+          await buildRoute();
+          speak('Haen uuden reitin.');
+        } catch (e) {
+          console.error(e);
+        } finally {
+          state.routeLoading = false;
+        }
+      }
+    }
+
+    function updateHUD() {
+      if (!state.current || !state.target) {
+        els.distance.textContent = '—';
+        els.sub.textContent = state.listening ? 'Kuuntelen' : 'Valmis';
+        els.center.classList.toggle('show', state.listening);
+        els.bar.style.width = '0%';
+        return;
+      }
+
+      const step = currentStep();
+      const anchor = step ? stepLocation(step, state.target) : state.target;
+
+      const dTarget = haversine(state.current, state.target);
+      const dAnchor = haversine(state.current, anchor);
+      const b = bearing(state.current, anchor);
+      const h = state.lastHeading;
+      const diff = h == null ? 0 : diffAngle(b, h);
+      const rot = arrowRotationFromDiff(diff);
+
+      els.arrowSvg.style.transform = `rotate(${rot}deg)`;
+
+      if (dTarget < 20) {
+        els.distance.textContent = 'NYT';
+        els.sub.textContent = 'Perillä pian';
+      } else {
+        els.distance.textContent = formatDistance(dAnchor);
+        const instruction = step?.instructions ? String(step.instructions).replace(/<[^>]+>/g, '') : '';
+        els.sub.textContent = instruction || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
+      }
+
+      const show = state.listening || !!state.target || dTarget < 120 || Math.abs(diff) > 18;
+      els.center.classList.toggle('show', !!show);
+
+      const pct = Math.max(0, Math.min(100, 100 - Math.min(dTarget, 1500) / 15));
+      els.bar.style.width = `${pct}%`;
+
+      if (dTarget < 20 && Date.now() - state.lastVibeAt > 1200) {
+        if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+        state.lastVibeAt = Date.now();
+      }
+
+      els.arrowWrap.style.transform = dTarget < 20 ? 'scale(1.06)' : 'scale(1)';
+      maybeAdvanceStep();
+      maybeReroute();
+    }
+
+    async function stopNavigation() {
+      if (state.watchId) {
+        navigator.geolocation.clearWatch(state.watchId);
+        state.watchId = null;
+      }
+
+      state.target = null;
+      state.targetLabel = '';
+      state.lastQuery = '';
+      state.lastIntent = '';
+      clearRoute();
+      els.gpsChip.textContent = 'Sijainti: pois';
+      setMode('Valmis');
+      updateHUD();
+      showHint('Pysäytetty');
+      speak('Navigointi pysäytetty.');
+    }
+
+    function stopRecording() {
+      clearTimeout(state.recordTimer);
+      if (!state.recording) return;
+      try {
+        if (state.recorder && state.recorder.state !== 'inactive') {
+          state.recorder.stop();
+        }
+      } catch {}
+    }
+
+    async function blobToBase64(blob) {
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = String(reader.result || '');
+          resolve(result.includes(',') ? result.split(',')[1] : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function transcribeAudioBlob(blob, mimeType) {
+      const audioBase64 = await blobToBase64(blob);
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioBase64,
+          mimeType: mimeType || blob.type || 'audio/webm'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Transkriptio epäonnistui');
+      return data.text || '';
+    }
+
+    async function ensureSession() {
+      await startCamera();
+      await getLocationNow().catch(() => {});
+      await requestCompass();
+      watchLocation();
+    }
+
+    async function startNavigationToQuery(query, nearby = false, spokenReply = '') {
+      const q = String(query || '').trim();
+      if (!q) {
+        speak('Kirjoita kohde ensin.');
+        showHint('Kirjoita kohde ensin');
+        return;
+      }
+
+      await ensureSession();
+      setMode('Haetaan paikka');
+      showHint(`Haetaan: ${q}`);
+
+      try {
+        const place = await geocodePlace(q, nearby);
+        state.target = { lat: place.lat, lng: place.lng };
+        state.targetLabel = place.label || q;
+        state.lastQuery = q;
+        state.lastIntent = 'navigate';
+        if (spokenReply) speak(spokenReply);
+        else speak(`Selvä, etsitään ${state.targetLabel}.`);
+
+        updateHUD();
+        await buildRoute();
+        setMode('Navigointi');
+        showHint(`Kohde: ${state.targetLabel}`);
+      } catch (e) {
+        console.error(e);
+        speak('En löytänyt paikkaa. Kokeile tarkempaa nimeä.');
+        showHint('Paikkaa ei löytynyt');
+      }
+    }
+
+    async function handleCommand(text) {
+      const transcript = String(text || '').trim();
+      if (!transcript) {
+        speak('En kuullut mitään.');
+        return;
+      }
+
+      showHint(transcript);
+
+      const parsed = await resolveCommand(transcript);
+      state.lastIntent = parsed.intent || '';
+
+      if (parsed.query) state.lastQuery = parsed.query;
+
+      if (parsed.intent === 'stop') {
+        await stopNavigation();
+        return;
+      }
+
+      if (parsed.intent === 'whereami') {
+        if (!state.current) {
+          speak(parsed.reply || 'Sijaintia ei vielä ole.');
+          return;
+        }
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${state.current.lat}&lon=${state.current.lng}`);
+          const data = await r.json();
+          if (data?.display_name) {
+            speak(`Olet nyt kohdassa ${data.display_name}.`);
+          } else {
+            speak(`Sijaintisi tarkkuus on noin ${Math.round(state.current.accuracy || 0)} metriä.`);
+          }
+        } catch {
+          speak(`Sijaintisi tarkkuus on noin ${Math.round(state.current.accuracy || 0)} metriä.`);
+        }
+        return;
+      }
+
+      if (parsed.intent === 'status') {
+        if (!state.current || !state.target) {
+          speak('Aktiivista navigointia ei ole käynnissä.');
+          return;
+        }
+        const d = haversine(state.current, state.target);
+        speak(d < 20 ? 'Olet perillä.' : `Matkaa on noin ${formatDistance(d)}.`);
+        return;
+      }
+
+      if (parsed.intent === 'help') {
+        speak(parsed.reply || 'Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.');
+        return;
+      }
+
+      if (parsed.intent === 'clarify') {
+        speak(parsed.reply || 'Minne haluat mennä?');
+        return;
+      }
+
+      if (parsed.intent === 'navigate') {
+        await startNavigationToQuery(parsed.query || transcript, parsed.nearby, parsed.reply);
+        return;
+      }
+
+      speak(parsed.reply || 'En ymmärtänyt komentoa.');
+    }
+
+    function startSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return false;
+      if (state.listening) {
+        try { state.speechRec?.stop(); } catch {}
+        return true;
+      }
+
+      state.speechRec = new SpeechRecognition();
+      state.speechRec.lang = 'fi-FI';
+      state.speechRec.continuous = false;
+      state.speechRec.interimResults = false;
+      state.speechRec.maxAlternatives = 1;
+
+      state.speechRec.onstart = () => {
+        state.listening = true;
+        els.micBtn.textContent = 'Kuuntelen';
+        els.micState.classList.add('show');
+        setMode('Kuuntelen');
+        els.center.classList.add('show');
+        showHint('Puhu nyt');
+        speak('Kuuntelen.');
+      };
+
+      state.speechRec.onend = () => {
+        state.listening = false;
+        els.micBtn.textContent = 'Mikki';
+        els.micState.classList.remove('show');
+        setMode(state.target ? 'Navigointi' : 'Valmis');
+        updateHUD();
+      };
+
+      state.speechRec.onerror = (e) => {
+        state.listening = false;
+        els.micBtn.textContent = 'Mikki';
+        els.micState.classList.remove('show');
+        setMode(state.target ? 'Navigointi' : 'Valmis');
+        console.log('speech error', e);
+        showHint('Puhe ei onnistunut');
+        speak('Puheentunnistus epäonnistui.');
+      };
+
+      state.speechRec.onresult = (event) => {
+        const transcript = event.results[event.results.length - 1][0].transcript || '';
+        handleCommand(transcript);
+      };
+
+      try {
+        state.speechRec.start();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function startRecordingVoice() {
+      if (state.recording) return;
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        state.stream = stream;
+
+        const preferredTypes = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/mp4'
+        ];
+
+        const mimeType = preferredTypes.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+        const options = mimeType ? { mimeType } : undefined;
+
+        const recorder = new MediaRecorder(stream, options);
+        state.recorder = recorder;
+        state.chunks = [];
+        state.recording = true;
+        state.listening = true;
+
+        els.micBtn.textContent = 'Puhu';
+        els.micState.classList.add('show');
+        setMode('Kuuntelen');
+        showHint('Puhu nyt');
+        speak('Kuuntelen.');
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) state.chunks.push(e.data);
+        };
+
+        recorder.onstop = async () => {
+          try {
+            const blob = new Blob(state.chunks, { type: mimeType || 'audio/webm' });
+            const transcript = await transcribeAudioBlob(blob, mimeType || blob.type);
+            await handleCommand(transcript);
+          } catch (e) {
+            console.error(e);
+            showHint('Puhe ei onnistunut');
+            speak('Puheentunnistus epäonnistui.');
+          } finally {
+            state.recording = false;
+            state.listening = false;
+            els.micBtn.textContent = 'Mikki';
+            els.micState.classList.remove('show');
+            if (state.stream) {
+              state.stream.getTracks().forEach(t => t.stop());
+              state.stream = null;
+            }
+            state.recorder = null;
+            updateHUD();
+          }
+        };
+
+        recorder.start();
+        state.recordTimer = setTimeout(() => stopRecording(), 7000);
+      } catch (e) {
+        console.error(e);
+        showHint('Mikrofoni ei auennut');
+        speak('Mikrofoni ei auennut.');
+      }
+    }
+
+    async function startVoice() {
+      const speechOk = startSpeechRecognition();
+      if (!speechOk) {
+        await startRecordingVoice();
+      }
+    }
+
+    async function startSession() {
+      await startCamera();
+      await getLocationNow().catch(() => {});
+      await requestCompass();
+      watchLocation();
+      updateHUD();
+      showHint('Sano: “Vie Kamppiin”');
+      setMode('Valmis');
+    }
+
+    async function goFromInput() {
+      const q = String(els.dest.value || '').trim();
+      if (!q) {
+        speak('Kirjoita kohde ensin.');
+        showHint('Kirjoita kohde ensin');
+        return;
+      }
+
+      await ensureSession();
+      const parsed = await resolveCommand(q);
+      if (parsed.intent === 'navigate') {
+        await startNavigationToQuery(parsed.query || q, parsed.nearby, parsed.reply);
+        return;
+      }
+
+      if (parsed.intent === 'stop') {
+        await stopNavigation();
+        return;
+      }
+
+      if (parsed.intent === 'whereami') {
+        await handleCommand(q);
+        return;
+      }
+
+      if (parsed.intent === 'status') {
+        await handleCommand(q);
+        return;
+      }
+
+      await handleCommand(q);
+    }
+
+    function updateLoop() {
+      if (state.current && state.target) {
+        updateHUD();
+      }
+      requestAnimationFrame(updateLoop);
+    }
+
+    els.startBtn.addEventListener('click', () => {
+      startSession();
+    });
+
+    els.micBtn.addEventListener('click', () => {
+      if (state.recording) stopRecording();
+      else startVoice();
+    });
+
+    els.stopBtn.addEventListener('click', () => {
+      try { state.speechRec?.stop(); } catch {}
+      try { state.recorder?.stop(); } catch {}
+      stopNavigation();
+    });
+
+    els.dest.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        goFromInput();
+      }
+    });
+
+    let sx = 0;
+    let sy = 0;
+    let tracking = false;
+
+    document.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      sx = t.clientX;
+      sy = t.clientY;
+      tracking = true;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      if (!tracking) return;
+      tracking = false;
+
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+
+      if (Math.abs(dx) < 35 && Math.abs(dy) < 35) return;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 0) {
+          setCameraVisible(true);
+          showHint('Kamera-tila');
+        } else {
+          setCameraVisible(false);
+          showHint('HUD-tila');
+        }
+      } else {
+        if (dy < 0) {
+          speak('Keskitetty.');
+          showHint('Keskitetty');
+        } else {
+          setCameraVisible(!state.mapVisible);
+          showHint(state.mapVisible ? 'Kamera näkyy' : 'Kamera piilossa');
+        }
+      }
+    }, { passive: true });
+
+    window.addEventListener('load', () => {
+      updateLoop();
+      setMode('Valmis');
+      showHint('Paina Aloita');
+    });
+  </script>
 </body>
 </html>

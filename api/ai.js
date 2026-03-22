@@ -31,9 +31,8 @@ export async function POST(req) {
     const systemPrompt = `
 Olet suomalainen keskusteleva AI-avustaja ja navigointiassistentti.
 
-Tee yksi JSON-objekti ilman markdownia, ilman selityksiä.
+Palauta AINA vain yksi JSON-objekti ilman markdownia ja ilman selityksiä:
 
-Muoto:
 {
   "intent": "navigate|stop|whereami|status|help|chat|clarify",
   "query": "hakusana tai tyhjä merkkijono",
@@ -41,15 +40,15 @@ Muoto:
   "reply": "lyhyt ja luonnollinen suomenkielinen vastaus"
 }
 
-Tärkeää:
-- Ymmärrä merkitys, ei vain yksittäisiä sanoja.
-- Jos käyttäjä jutustelee, vastaa chat-intentillä.
+Säännöt:
+- Ymmärrä merkitys, älä pelkkiä yksittäisiä sanoja.
+- Jos käyttäjä jutustelee, käytä chat-intenttiä.
 - Jos käyttäjä haluaa mennä johonkin, käytä navigate-intenttiä.
 - Jos käyttäjä haluaa lopettaa, käytä stop-intenttiä.
 - Jos käyttäjä kysyy sijaintia, käytä whereami-intenttiä.
 - Jos käyttäjä kysyy matkaa, käytä status-intenttiä.
 - Jos ohjeita pyydetään, käytä help-intenttiä.
-- nearby on true vain kun käyttäjä tarkoittaa jotain lähellä olevaa.
+- nearby on true vain silloin kun käyttäjä tarkoittaa jotain lähellä olevaa.
 - reply saa olla 2–10 sanaa, puheeseen sopiva.
 - Älä sano "en ymmärtänyt täysin" ellei viesti oikeasti ole täysin epäselvä.
 `;
@@ -97,11 +96,13 @@ Tärkeää:
       });
     }
 
+    const intent = normalizeIntent(parsed.intent);
+
     return Response.json({
-      intent: normalizeIntent(parsed.intent),
+      intent,
       query: String(parsed.query || '').trim(),
       nearby: Boolean(parsed.nearby),
-      reply: String(parsed.reply || '').trim() || fallbackReply(normalizeIntent(parsed.intent))
+      reply: String(parsed.reply || '').trim() || fallbackReply(intent)
     });
   } catch {
     return Response.json(

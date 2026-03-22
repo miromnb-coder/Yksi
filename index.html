@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Halo HUD</title>
   <style>
-    :root {
-      --bg: #020203;
-      --glass: rgba(255,255,255,0.06);
-      --line: rgba(255,255,255,0.10);
-      --text: rgba(255,255,255,0.96);
-      --muted: rgba(255,255,255,0.56);
+    :root{
+      --bg:#020203;
+      --glass:rgba(255,255,255,.06);
+      --line:rgba(255,255,255,.10);
+      --text:rgba(255,255,255,.96);
+      --muted:rgba(255,255,255,.56);
     }
 
     html, body {
@@ -19,21 +19,23 @@
       height: 100%;
       overflow: hidden;
       background:
-        radial-gradient(circle at 50% 35%, rgba(255,255,255,0.08), transparent 28%),
-        linear-gradient(180deg, #07070a, var(--bg));
+        radial-gradient(circle at 50% 28%, rgba(255,255,255,.09), transparent 24%),
+        radial-gradient(circle at 50% 52%, rgba(255,255,255,.04), transparent 48%),
+        linear-gradient(180deg, #09090d, var(--bg));
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: var(--text);
       touch-action: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
     #app {
       position: fixed;
       inset: 0;
+      padding: 14px;
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: 14px;
-      box-sizing: border-box;
     }
 
     #top {
@@ -44,30 +46,31 @@
 
     #dest {
       flex: 1;
-      min-height: 50px;
+      min-height: 52px;
       border-radius: 18px;
       border: 1px solid var(--line);
       background: var(--glass);
-      backdrop-filter: blur(18px);
       color: var(--text);
       padding: 0 14px;
       font-size: 15px;
       outline: none;
+      backdrop-filter: blur(18px);
       box-sizing: border-box;
     }
 
     #go {
       min-width: 58px;
-      min-height: 50px;
+      min-height: 52px;
       border-radius: 18px;
       border: 1px solid var(--line);
       background: rgba(255,255,255,0.10);
       color: var(--text);
       font-weight: 700;
       font-size: 14px;
+      backdrop-filter: blur(18px);
     }
 
-    #hud {
+    #center {
       position: absolute;
       left: 50%;
       top: 50%;
@@ -75,40 +78,87 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
       opacity: 0;
-      transition: opacity 220ms ease;
+      transition: opacity 240ms ease;
       pointer-events: none;
       text-align: center;
     }
 
-    #hud.show {
+    #center.show {
       opacity: 1;
     }
 
     .ring {
-      width: 136px;
-      height: 136px;
+      width: 144px;
+      height: 144px;
       border-radius: 50%;
       display: grid;
       place-items: center;
-      border: 1px solid rgba(255,255,255,0.12);
+      position: relative;
+      border: 1px solid rgba(255,255,255,.10);
       background:
-        radial-gradient(circle at center, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 45%, transparent 66%);
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 40px rgba(255,255,255,0.05);
+        radial-gradient(circle at center, rgba(255,255,255,.11), rgba(255,255,255,.03) 42%, transparent 68%);
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,.05),
+        0 0 44px rgba(255,255,255,.06);
+      overflow: hidden;
     }
 
-    .arrow {
-      width: 84px;
-      height: 84px;
-      border-radius: 26px;
+    .ring::before {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      border: 1px dashed rgba(255,255,255,.14);
+      opacity: .45;
+      animation: spin 18s linear infinite;
+    }
+
+    .ring::after {
+      content: "";
+      position: absolute;
+      inset: -20px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, transparent 48%, rgba(255,255,255,.10) 49%, transparent 51%);
+      opacity: .5;
+      animation: breathe 3.2s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes breathe {
+      0%,100% { transform: scale(.82); opacity: .42; }
+      50% { transform: scale(.90); opacity: .72; }
+    }
+
+    .arrowWrap {
+      width: 86px;
+      height: 86px;
+      border-radius: 28px;
       display: grid;
       place-items: center;
-      border: 1px solid rgba(255,255,255,0.15);
-      background: rgba(255,255,255,0.07);
-      box-shadow: 0 14px 28px rgba(0,0,0,0.25);
-      font-size: 56px;
-      line-height: 1;
+      position: relative;
+      z-index: 2;
+      background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.12),
+        0 14px 28px rgba(0,0,0,.24);
+      transition: transform 180ms ease;
+      will-change: transform;
+    }
+
+    .arrowSvg {
+      width: 52px;
+      height: 52px;
+      transform-origin: 50% 50%;
+      transform: rotate(0deg);
+      transition: transform 220ms cubic-bezier(.2,.8,.2,1);
+      filter: drop-shadow(0 0 10px rgba(255,255,255,.10));
     }
 
     #distance {
@@ -124,7 +174,7 @@
     #sub {
       font-size: 12px;
       color: var(--muted);
-      letter-spacing: 0.3px;
+      letter-spacing: 0.35px;
       text-transform: uppercase;
     }
 
@@ -146,6 +196,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      backdrop-filter: blur(18px);
     }
 
     #hint {
@@ -176,15 +227,20 @@
       <button id="go">Go</button>
     </div>
 
-    <div id="hud">
+    <div id="center">
       <div class="ring">
-        <div class="arrow" id="arrow">↑</div>
+        <div class="arrowWrap" id="arrowWrap">
+          <svg class="arrowSvg" id="arrowSvg" viewBox="0 0 100 100" aria-hidden="true">
+            <path d="M50 14 L50 70" fill="none" stroke="white" stroke-width="8" stroke-linecap="round"/>
+            <path d="M28 36 L50 14 L72 36" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
       </div>
       <div id="distance">—</div>
       <div id="sub">Ready</div>
     </div>
 
-    <div id="hint">Swipe vasen/oikea vaihtaa HUD / Map</div>
+    <div id="hint">Swipe vasen/oikea vaihtaa tilaa</div>
 
     <div id="bottom">
       <div class="chip" id="gps">GPS: off</div>
@@ -194,8 +250,9 @@
   </div>
 
   <script>
-    const hud = document.getElementById('hud');
-    const arrow = document.getElementById('arrow');
+    const center = document.getElementById('center');
+    const arrowSvg = document.getElementById('arrowSvg');
+    const arrowWrap = document.getElementById('arrowWrap');
     const distanceEl = document.getElementById('distance');
     const sub = document.getElementById('sub');
     const gps = document.getElementById('gps');
@@ -208,7 +265,9 @@
       current: null,
       target: null,
       watchId: null,
-      heading: null
+      heading: null,
+      mode: 'HUD',
+      lastVibeAt: 0
     };
 
     function showHint(text) {
@@ -245,21 +304,23 @@
       return d;
     }
 
-    function arrowFromDiff(d) {
-      if (Math.abs(d) < 18) return '↑';
-      if (d >= 18 && d < 60) return '↗';
-      if (d >= 60 && d < 120) return '→';
-      if (d >= 120) return '↘';
-      if (d <= -18 && d > -60) return '↖';
-      if (d <= -60 && d > -120) return '←';
-      if (d <= -120) return '↙';
-      return '↑';
-    }
-
     function formatDistance(m) {
       if (m == null || Number.isNaN(m)) return '—';
       if (m < 1000) return `${Math.round(m)} m`;
       return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+    }
+
+    function arrowRotationFromDiff(d) {
+      if (Math.abs(d) < 10) return 0;
+      if (d >= 10 && d < 40) return 30;
+      if (d >= 40 && d < 85) return 90;
+      if (d >= 85 && d < 140) return 135;
+      if (d >= 140) return 180;
+      if (d <= -10 && d > -40) return -30;
+      if (d <= -40 && d > -85) return -90;
+      if (d <= -85 && d > -140) return -135;
+      if (d <= -140) return 180;
+      return 0;
     }
 
     async function geocode(q) {
@@ -270,6 +331,22 @@
       return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
     }
 
+    async function enableCompass() {
+      if (typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function") {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        if (permission !== "granted") return;
+      }
+
+      window.addEventListener("deviceorientation", (e) => {
+        if (typeof e.webkitCompassHeading === "number") {
+          state.heading = e.webkitCompassHeading;
+        } else if (e.alpha != null) {
+          state.heading = 360 - e.alpha;
+        }
+      }, true);
+    }
+
     function updateHUD() {
       if (!state.current || !state.target) return;
 
@@ -277,14 +354,30 @@
       const b = bearing(state.current, state.target);
       const h = state.heading;
 
-      arrow.textContent = h == null ? '↑' : arrowFromDiff(diffAngle(b, h));
-      distanceEl.textContent = d < 30 ? 'Arrived' : formatDistance(d);
-      sub.textContent = d < 30 ? 'Done' : 'Navigate';
+      let diff = 0;
+      if (h != null) diff = diffAngle(b, h);
+
+      const rot = arrowRotationFromDiff(diff);
+      arrowSvg.style.transform = `rotate(${rot}deg)`;
+
+      distanceEl.textContent = d < 20 ? 'NOW' : formatDistance(d);
+      sub.textContent = d < 20 ? 'Arrived soon' : 'Navigate';
       gps.textContent = 'GPS: on';
       acc.textContent = state.current.accuracy ? `Acc: ±${Math.round(state.current.accuracy)}m` : 'Acc: —';
-      hud.classList.add('show');
 
-      if (d < 30) arrow.textContent = '✓';
+      const show = d < 120 || Math.abs(diff) > 18;
+      center.classList.toggle('show', show || state.mode === 'DEBUG');
+
+      if (d < 20 && Date.now() - state.lastVibeAt > 1200) {
+        if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+        state.lastVibeAt = Date.now();
+      }
+
+      if (d < 20) {
+        arrowWrap.style.transform = 'scale(1.06)';
+      } else {
+        arrowWrap.style.transform = 'scale(1)';
+      }
     }
 
     async function start() {
@@ -294,8 +387,15 @@
         return;
       }
 
-      showHint('Haetaan paikka…');
+      showHint('Haetaan sijainti…');
+      await enableCompass();
+
       state.target = await geocode(q);
+
+      if (!navigator.geolocation) {
+        showHint('GPS ei ole käytössä');
+        return;
+      }
 
       navigator.geolocation.getCurrentPosition((pos) => {
         state.current = {
@@ -303,10 +403,16 @@
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
+        gps.textContent = 'GPS: on';
         updateHUD();
       }, () => {
+        gps.textContent = 'GPS: off';
         showHint('Sijaintilupa puuttuu');
-      }, { enableHighAccuracy: true, timeout: 12000 });
+      }, {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0
+      });
 
       if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
       state.watchId = navigator.geolocation.watchPosition((pos) => {
@@ -315,14 +421,21 @@
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
+        gps.textContent = 'GPS: on';
         updateHUD();
-      }, () => {}, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+      }, () => {}, {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000
+      });
     }
 
-    document.getElementById('go').onclick = () => start().catch(err => {
-      console.error(err);
-      showHint('Virhe');
-    });
+    document.getElementById('go').onclick = () => {
+      start().catch(err => {
+        console.error(err);
+        showHint('Virhe');
+      });
+    };
 
     dest.value = 'Kamppi Helsinki';
 
@@ -342,40 +455,17 @@
       const dy = t.clientY - sy;
 
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 35) {
-        mode.textContent = dx > 0 ? 'Mode: MAP' : 'Mode: HUD';
-        showHint(dx > 0 ? 'Map mode' : 'HUD mode');
+        state.mode = dx > 0 ? 'MAP' : 'HUD';
+        mode.textContent = `Mode: ${state.mode}`;
+        showHint(state.mode === 'MAP' ? 'Map mode' : 'HUD mode');
       }
     }, { passive: true });
 
-    function setupTilt() {
-      window.addEventListener('deviceorientation', (e) => {
-        const gamma = e.gamma || 0;
-        const beta = e.beta || 0;
-        arrow.style.transform = `translate(${Math.max(-10, Math.min(10, gamma / 2))}px, ${Math.max(-8, Math.min(8, beta / 5))}px)`;
-      }, true);
-    }
-
     document.body.addEventListener('click', () => {
-      if (window.DeviceOrientationEvent) setupTilt();
+      enableCompass();
     }, { once: true });
 
     showHint('Ready');
   </script>
 </body>
 </html>
-async function enableCompass() {
-  if (typeof DeviceOrientationEvent !== "undefined" &&
-      typeof DeviceOrientationEvent.requestPermission === "function") {
-
-    const permission = await DeviceOrientationEvent.requestPermission();
-    if (permission !== "granted") return;
-  }
-
-  window.addEventListener("deviceorientation", (e) => {
-    if (e.webkitCompassHeading !== undefined) {
-      state.heading = e.webkitCompassHeading; // iPhone
-    } else if (e.alpha !== null) {
-      state.heading = 360 - e.alpha; // fallback
-    }
-  }, true);
-}

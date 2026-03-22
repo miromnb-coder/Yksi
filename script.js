@@ -71,6 +71,7 @@ const ALIASES = {
 };
 
 function showHint(text, ms = 1800) {
+  if (!el.hint) return;
   el.hint.textContent = text;
   el.hint.classList.add('show');
   clearTimeout(showHint.t);
@@ -78,8 +79,8 @@ function showHint(text, ms = 1800) {
 }
 
 function setMode(text) {
-  el.modeChip.textContent = `Tila: ${text}`;
-  el.stateLine.textContent = text;
+  if (el.modeChip) el.modeChip.textContent = `Tila: ${text}`;
+  if (el.stateLine) el.stateLine.textContent = text;
 }
 
 function toRad(v) { return v * Math.PI / 180; }
@@ -134,50 +135,157 @@ function bestFinnishVoice() {
     voices.find(v => /finn/i.test(v.name)) ||
     voices.find(v => /siri/i.test(v.name)) ||
     voices.find(v => v.default) ||
+    voices[0] ||
     null;
 }
 
 function scheduleRelisten(delay = 500) {
   clearTimeout(state.relistenTimer);
   if (!state.conversationMode) return;
+
   state.relistenTimer = setTimeout(() => {
-    if (state.conversationMode && !state.listening && !state.recording) {
+    if (state.conversationMode && !state.listening && !state.recording && !state.processingVoice) {
       startVoiceInput();
     }
   }, delay);
+}
+
+function initUltraVoice() {
+  if (state._ultraVoiceInitDone) return;
+  state._ultraVoiceInitDone = true;
+
+  const refresh = () => {
+    try {
+      state._voices = window.speechSynthesis?.getVoices?.() || [];
+    } catch {
+      state._voices = [];
+    }
+  };
+
+  refresh();
+
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      refresh();
+      flushUltraVoiceQueue();
+    };
+  }
+
+  const unlock = async () => {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      refresh();
+      state._voiceUnlocked = true;
+      flushUltraVoiceQueue();
+    } catch {}
+  };
+
+  document.addEventListener('click', unlock, { once: true, passive: true });
+  document.addEventListener('touchstart', unlock, { once: true, passive: true });
+  document.addEventListener('pointerdown', unlock, { once: true, passive: true });
+}
+
+async function unlockUltraVoice() {
+  try {
+    if (!('speechSynthesis' in window)) return false;
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+
+    if (!state._voices || !state._voices.length) {
+      state._voices = window.speechSynthesis.getVoices?.() || [];
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      state._voices = window.speechSynthesis.getVoices?.() || state._voices;
+    }
+
+    state._voiceUnlocked = true;
+    flushUltraVoiceQueue();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pickUltraFinnishVoice() {
+  const voices = (state._voices && state._voices.length)
+    ? state._voices
+    : (window.speechSynthesis?.getVoices?.() || []);
+
+  return (
+    voices.find(v => /^fi\b/i.test(v.lang)) ||
+    voices.find(v => /finn/i.test(v.name)) ||
+    voices.find(v => /siri/i.test(v.name)) ||
+    voices.find(v => v.default) ||
+    voices[0] ||
+    null
+  );
+}
+
+function flushUltraVoiceQueue() {
+  if (!state._voiceQueue || !state._voiceQueue.length) return;
+  const items = [...state._voiceQueue];
+  state._voiceQueue = [];
+
+  items.forEach((item, index) => {
+    setTimeout(() => {
+      speakFi(item.text, item.options || {});
+    }, index * 350);
+  });
 }
 
 function speakFi(text, options = {}) {
   const clean = String(text || '').trim();
   if (!clean || !('speechSynthesis' in window)) return;
 
+  if (!state._voiceQueue) state._voiceQueue = [];
+  if (typeof state._voiceUnlocked === 'undefined') state._voiceUnlocked = false;
+
   const shouldRelisten = options.relisten !== false && state.conversationMode;
+  const rate = typeof options.rate === 'number' ? options.rate : 0.94;
+  const pitch = typeof options.pitch === 'number' ? options.pitch : 1.0;
+  const volume = typeof options.volume === 'number' ? options.volume : 1.0;
 
-  try {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(clean);
-    u.lang = 'fi-FI';
-    u.rate = 0.94;
-    u.pitch = 1.0;
-    u.volume = 1.0;
+  const doSpeak = () => {
+    try {
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.lang = 'fi-FI';
+      utter.rate = rate;
+      utter.pitch = pitch;
+      utter.volume = volume;
 
-    const voice = bestFinnishVoice();
-    if (voice) u.voice = voice;
-    state.ttsVoice = voice || null;
+      const voice = pickUltraFinnishVoice();
+      if (voice) utter.voice = voice;
 
-    u.onend = () => {
-      if (typeof options.onEnd === 'function') options.onEnd();
-      if (shouldRelisten) scheduleRelisten(350);
-    };
+      utter.onend = () => {
+        if (typeof options.onEnd === 'function') options.onEnd();
+        if (shouldRelisten) scheduleRelisten(250);
+      };
 
-    u.onerror = () => {
-      if (shouldRelisten) scheduleRelisten(350);
-    };
+      utter.onerror = () => {
+        if (shouldRelisten) scheduleRelisten(250);
+      };
 
-    window.speechSynthesis.speak(u);
-  } catch {
-    if (shouldRelisten) scheduleRelisten(350);
+      window.speechSynthesis.cancel();
+      setTimeout(() => {
+        try {
+          window.speechSynthesis.speak(utter);
+        } catch {
+          if (shouldRelisten) scheduleRelisten(250);
+        }
+      }, 80);
+    } catch {
+      if (shouldRelisten) scheduleRelisten(250);
+    }
+  };
+
+  if (!state._voiceUnlocked) {
+    state._voiceQueue.push({ text: clean, options });
+    return;
   }
+
+  doSpeak();
 }
 
 function normalizeText(t) {
@@ -202,6 +310,49 @@ function normalizeQuery(text) {
   if (t.includes('kuntosali')) return { q: 'gym', nearby: true };
 
   return { q: text, nearby: false };
+}
+
+function normalizeIntent(intent) {
+  const value = String(intent || '').trim().toLowerCase();
+  if (['navigate', 'stop', 'whereami', 'status', 'help', 'clarify'].includes(value)) return value;
+  return 'clarify';
+}
+
+function fallbackReply(intent) {
+  switch (intent) {
+    case 'stop':
+      return 'Navigointi pysäytetty.';
+    case 'whereami':
+      return 'Kerron sijaintisi.';
+    case 'status':
+      return 'Tarkistan matkan.';
+    case 'help':
+      return 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.';
+    case 'navigate':
+      return 'Selvä, etsitään paikka.';
+    default:
+      return 'Minne haluat mennä?';
+  }
+}
+
+function extractJsonObject(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+
+  const cleaned = raw
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/i, '')
+    .trim();
+
+  const first = cleaned.indexOf('{');
+  const last = cleaned.lastIndexOf('}');
+  if (first === -1 || last === -1 || last <= first) return null;
+
+  try {
+    return JSON.parse(cleaned.slice(first, last + 1));
+  } catch {
+    return null;
+  }
 }
 
 function localParseCommand(text) {
@@ -290,51 +441,40 @@ function localParseCommand(text) {
   };
 }
 
-function normalizeIntent(intent) {
-  const value = String(intent || '').trim().toLowerCase();
-  if (['navigate', 'stop', 'whereami', 'status', 'help', 'clarify'].includes(value)) {
-    return value;
-  }
-  return 'clarify';
-}
-
-function fallbackReply(intent) {
-  switch (intent) {
-    case 'stop':
-      return 'Navigointi pysäytetty.';
-    case 'whereami':
-      return 'Kerron sijaintisi.';
-    case 'status':
-      return 'Tarkistan matkan.';
-    case 'help':
-      return 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen tai kuinka pitkä matka.';
-    case 'navigate':
-      return 'Selvä, etsitään paikka.';
-    default:
-      return 'Minne haluat mennä?';
-  }
-}
-
-function extractJsonObject(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-
-  const cleaned = raw
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
-
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first === -1 || last === -1 || last <= first) return null;
-
-  const candidate = cleaned.slice(first, last + 1);
-
+async function callAI(text) {
   try {
-    return JSON.parse(candidate);
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        currentLocation: state.current,
+        activeTarget: state.targetLabel,
+        lastQuery: state.lastQuery,
+        lastIntent: state.lastIntent
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'AI-virhe');
+    return data;
   } catch {
     return null;
   }
+}
+
+async function converseWithAI(transcript) {
+  const ai = await callAI(transcript);
+  if (!ai) return localParseCommand(transcript);
+
+  const parsed = {
+    intent: normalizeIntent(ai.intent),
+    query: String(ai.query || '').trim(),
+    nearby: Boolean(ai.nearby),
+    reply: String(ai.reply || '').trim() || fallbackReply(normalizeIntent(ai.intent))
+  };
+
+  return parsed;
 }
 
 function categoryForNearby(query) {
@@ -368,17 +508,11 @@ function categoryForNearby(query) {
 }
 
 function pointFromElement(elm) {
-  if (typeof elm.lat === 'number' && typeof elm.lon === 'number') {
-    return { lat: elm.lat, lng: elm.lon };
-  }
+  if (typeof elm.lat === 'number' && typeof elm.lon === 'number') return { lat: elm.lat, lng: elm.lon };
   if (elm.center && typeof elm.center.lat === 'number' && typeof elm.center.lon === 'number') {
     return { lat: elm.center.lat, lng: elm.center.lon };
   }
   return null;
-}
-
-function distanceBetween(a, b) {
-  return haversine(a, b);
 }
 
 async function searchExactPlace(query) {
@@ -423,9 +557,7 @@ async function searchExactPlace(query) {
 }
 
 async function searchNearbyPlace(query) {
-  if (!state.current) {
-    throw new Error('Sijainti puuttuu');
-  }
+  if (!state.current) throw new Error('Sijainti puuttuu');
 
   const category = categoryForNearby(query);
   if (!category) {
@@ -453,8 +585,8 @@ out center tags;
   });
 
   const data = await res.json().catch(() => null);
-
   const elements = Array.isArray(data?.elements) ? data.elements : [];
+
   const points = elements
     .map((e) => {
       const p = pointFromElement(e);
@@ -471,7 +603,7 @@ out center tags;
     return searchExactPlace(query);
   }
 
-  points.sort((a, b) => distanceBetween(state.current, a) - distanceBetween(state.current, b));
+  points.sort((a, b) => haversine(state.current, a) - haversine(state.current, b));
   return points[0];
 }
 
@@ -546,39 +678,8 @@ function currentStep() {
   return state.routeSteps[Math.min(state.activeStepIndex, state.routeSteps.length - 1)];
 }
 
-async function converseWithAI(transcript) {
-  try {
-    const res = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: transcript,
-        currentLocation: state.current,
-        activeTarget: state.targetLabel,
-        lastQuery: state.lastQuery,
-        lastIntent: state.lastIntent
-      })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      return localParseCommand(transcript);
-    }
-
-    return {
-      intent: normalizeIntent(data.intent),
-      query: String(data.query || '').trim(),
-      nearby: Boolean(data.nearby),
-      reply: String(data.reply || '').trim() || fallbackReply(normalizeIntent(data.intent))
-    };
-  } catch {
-    return localParseCommand(transcript);
-  }
-}
-
 function setCameraVisible(v) {
-  el.cam.style.opacity = v ? '1' : '0.08';
+  if (el.cam) el.cam.style.opacity = v ? '1' : '0.08';
   state.mapVisible = v;
 }
 
@@ -599,7 +700,7 @@ async function startCamera() {
     try { await el.cam.play(); } catch {}
     state.stream = stream;
     state.cameraOn = true;
-    el.cam.style.opacity = '1';
+    if (el.cam) el.cam.style.opacity = '1';
     return true;
   } catch (e) {
     console.error(e);
@@ -613,7 +714,7 @@ function stopCamera() {
     state.stream.getTracks().forEach(t => t.stop());
     state.stream = null;
   }
-  el.cam.srcObject = null;
+  if (el.cam) el.cam.srcObject = null;
   state.cameraOn = false;
 }
 
@@ -625,7 +726,7 @@ async function requestCompass() {
       typeof DeviceOrientationEvent.requestPermission === 'function') {
       const permission = await DeviceOrientationEvent.requestPermission();
       if (permission !== 'granted') {
-        el.compassChip.textContent = 'Kompassi: pois';
+        if (el.compassChip) el.compassChip.textContent = 'Kompassi: pois';
         return false;
       }
     }
@@ -639,11 +740,11 @@ async function requestCompass() {
     }, true);
 
     state.compassOn = true;
-    el.compassChip.textContent = 'Kompassi: päällä';
+    if (el.compassChip) el.compassChip.textContent = 'Kompassi: päällä';
     return true;
   } catch (e) {
     console.error(e);
-    el.compassChip.textContent = 'Kompassi: pois';
+    if (el.compassChip) el.compassChip.textContent = 'Kompassi: pois';
     return false;
   }
 }
@@ -662,7 +763,7 @@ function getLocationNow(timeoutMs = 9000) {
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
-        el.gpsChip.textContent = 'Sijainti: päällä';
+        if (el.gpsChip) el.gpsChip.textContent = 'Sijainti: päällä';
         resolve(state.current);
       },
       (err) => {
@@ -689,7 +790,7 @@ function watchLocation() {
         lng: pos.coords.longitude,
         accuracy: pos.coords.accuracy
       };
-      el.gpsChip.textContent = 'Sijainti: päällä';
+      if (el.gpsChip) el.gpsChip.textContent = 'Sijainti: päällä';
       updateHUD();
     },
     () => {},
@@ -751,10 +852,10 @@ async function maybeReroute() {
 
 function updateHUD() {
   if (!state.current || !state.target) {
-    el.distance.textContent = '—';
-    el.sub.textContent = state.listening ? 'Kuuntelen' : 'Valmis';
-    el.center.classList.toggle('show', state.listening);
-    el.bar.style.width = '0%';
+    if (el.distance) el.distance.textContent = '—';
+    if (el.sub) el.sub.textContent = state.listening ? 'Kuuntelen' : 'Valmis';
+    if (el.center) el.center.classList.toggle('show', state.listening);
+    if (el.bar) el.bar.style.width = '0%';
     return;
   }
 
@@ -768,28 +869,28 @@ function updateHUD() {
   const diff = h == null ? 0 : diffAngle(b, h);
   const rot = arrowRotationFromDiff(diff);
 
-  el.arrowSvg.style.transform = `rotate(${rot}deg)`;
+  if (el.arrowSvg) el.arrowSvg.style.transform = `rotate(${rot}deg)`;
 
   if (dTarget < 20) {
-    el.distance.textContent = 'NYT';
-    el.sub.textContent = 'Perillä pian';
+    if (el.distance) el.distance.textContent = 'NYT';
+    if (el.sub) el.sub.textContent = 'Perillä pian';
   } else {
-    el.distance.textContent = formatDistance(dAnchor);
-    el.sub.textContent = stepInstruction(step) || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
+    if (el.distance) el.distance.textContent = formatDistance(dAnchor);
+    if (el.sub) el.sub.textContent = stepInstruction(step) || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
   }
 
   const show = state.listening || !!state.target || dTarget < 120 || Math.abs(diff) > 18;
-  el.center.classList.toggle('show', !!show);
+  if (el.center) el.center.classList.toggle('show', !!show);
 
   const pct = Math.max(0, Math.min(100, 100 - Math.min(dTarget, 1500) / 15));
-  el.bar.style.width = `${pct}%`;
+  if (el.bar) el.bar.style.width = `${pct}%`;
 
   if (dTarget < 20 && Date.now() - state.lastVibeAt > 1200) {
     if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
     state.lastVibeAt = Date.now();
   }
 
-  el.arrowWrap.style.transform = dTarget < 20 ? 'scale(1.06)' : 'scale(1)';
+  if (el.arrowWrap) el.arrowWrap.style.transform = dTarget < 20 ? 'scale(1.06)' : 'scale(1)';
   maybeAdvanceStep();
   maybeReroute();
 }
@@ -806,8 +907,8 @@ function stopNavigation() {
   state.lastIntent = '';
   clearRoute();
 
-  el.gpsChip.textContent = 'Sijainti: pois';
-  el.compassChip.textContent = state.compassOn ? 'Kompassi: päällä' : 'Kompassi: pois';
+  if (el.gpsChip) el.gpsChip.textContent = 'Sijainti: pois';
+  if (el.compassChip) el.compassChip.textContent = state.compassOn ? 'Kompassi: päällä' : 'Kompassi: pois';
   setMode('Valmis');
   updateHUD();
   showHint('Pysäytetty');
@@ -987,12 +1088,10 @@ function stopVoiceCapture(hardStop = true) {
 
   state.listening = false;
   state.recording = false;
-  el.micBtn.textContent = 'Mikki';
-  el.micState.classList.remove('show');
+  if (el.micBtn) el.micBtn.textContent = 'Mikki';
+  if (el.micState) el.micState.classList.remove('show');
 
-  if (hardStop) {
-    state.conversationMode = false;
-  }
+  if (hardStop) state.conversationMode = false;
 }
 
 function startSpeechRecognition() {
@@ -1009,18 +1108,18 @@ function startSpeechRecognition() {
 
   state.speechRec.onstart = () => {
     state.listening = true;
-    el.micBtn.textContent = 'Kuuntelen';
-    el.micState.classList.add('show');
+    if (el.micBtn) el.micBtn.textContent = 'Kuuntelen';
+    if (el.micState) el.micState.classList.add('show');
     setMode('Kuuntelen');
-    el.center.classList.add('show');
+    if (el.center) el.center.classList.add('show');
     showHint('Puhu nyt');
     speakFi('Kuuntelen.', { relisten: false });
   };
 
   state.speechRec.onend = () => {
     state.listening = false;
-    el.micBtn.textContent = 'Mikki';
-    el.micState.classList.remove('show');
+    if (el.micBtn) el.micBtn.textContent = 'Mikki';
+    if (el.micState) el.micState.classList.remove('show');
     setMode(state.target ? 'Navigointi' : 'Valmis');
 
     if (state.conversationMode && !state.processingVoice) {
@@ -1033,8 +1132,8 @@ function startSpeechRecognition() {
   state.speechRec.onerror = (e) => {
     console.log('speech error', e);
     state.listening = false;
-    el.micBtn.textContent = 'Mikki';
-    el.micState.classList.remove('show');
+    if (el.micBtn) el.micBtn.textContent = 'Mikki';
+    if (el.micState) el.micState.classList.remove('show');
     setMode(state.target ? 'Navigointi' : 'Valmis');
     showHint('Puhe ei onnistunut');
     speakFi('Puheentunnistus epäonnistui.');
@@ -1081,8 +1180,8 @@ async function startRecordingVoice() {
     state.recording = true;
     state.listening = true;
 
-    el.micBtn.textContent = 'Puhu';
-    el.micState.classList.add('show');
+    if (el.micBtn) el.micBtn.textContent = 'Puhu';
+    if (el.micState) el.micState.classList.add('show');
     setMode('Kuuntelen');
     showHint('Puhu nyt');
     speakFi('Kuuntelen.', { relisten: false });
@@ -1098,8 +1197,8 @@ async function startRecordingVoice() {
       } finally {
         state.recording = false;
         state.listening = false;
-        el.micBtn.textContent = 'Mikki';
-        el.micState.classList.remove('show');
+        if (el.micBtn) el.micBtn.textContent = 'Mikki';
+        if (el.micState) el.micState.classList.remove('show');
         if (state.stream) {
           state.stream.getTracks().forEach(t => t.stop());
           state.stream = null;
@@ -1120,8 +1219,8 @@ async function startRecordingVoice() {
     speakFi('Mikrofoni ei auennut.');
     state.recording = false;
     state.listening = false;
-    el.micBtn.textContent = 'Mikki';
-    el.micState.classList.remove('show');
+    if (el.micBtn) el.micBtn.textContent = 'Mikki';
+    if (el.micState) el.micState.classList.remove('show');
   }
 }
 
@@ -1135,6 +1234,7 @@ async function startVoiceInput() {
 }
 
 async function startSession() {
+  await unlockUltraVoice();
   await startCamera();
   await getLocationNow().catch(() => {});
   await requestCompass();
@@ -1145,14 +1245,14 @@ async function startSession() {
   setMode('Valmis');
 
   if (!state.cameraOn) {
-    el.stateLine.textContent = 'Kamera ei vielä auennut. Paina Aloita uudestaan ja salli kamera.';
+    if (el.stateLine) el.stateLine.textContent = 'Kamera ei vielä auennut. Paina Aloita uudestaan ja salli kamera.';
   } else {
-    el.stateLine.textContent = 'Kamera on päällä. Paina Mikki tai kirjoita kohde.';
+    if (el.stateLine) el.stateLine.textContent = 'Kamera on päällä. Paina Mikki tai kirjoita kohde.';
   }
 }
 
 async function goFromInput() {
-  const q = String(el.dest.value || '').trim();
+  const q = String(el.dest?.value || '').trim();
   if (!q) {
     speakFi('Kirjoita kohde ensin.');
     showHint('Kirjoita kohde ensin');
@@ -1183,11 +1283,13 @@ function updateLoop() {
   requestAnimationFrame(updateLoop);
 }
 
-el.startBtn.addEventListener('click', () => {
-  startSession();
+el.startBtn?.addEventListener('click', async () => {
+  await startSession();
 });
 
-el.micBtn.addEventListener('click', async () => {
+el.micBtn?.addEventListener('click', async () => {
+  await unlockUltraVoice();
+
   if (state.listening || state.recording) {
     stopVoiceCapture(true);
     return;
@@ -1197,7 +1299,7 @@ el.micBtn.addEventListener('click', async () => {
   await startVoiceInput();
 });
 
-el.stopBtn.addEventListener('click', () => {
+el.stopBtn?.addEventListener('click', () => {
   stopVoiceCapture(true);
   stopNavigation();
   stopCamera();
@@ -1205,7 +1307,7 @@ el.stopBtn.addEventListener('click', () => {
   setMode('Valmis');
 });
 
-el.dest.addEventListener('keydown', (e) => {
+el.dest?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     goFromInput();
@@ -1235,12 +1337,10 @@ document.addEventListener('touchend', (e) => {
 
   if (Math.abs(dx) > Math.abs(dy)) {
     if (dx > 0) {
-      el.cam.style.opacity = '1';
-      state.mapVisible = true;
+      setCameraVisible(true);
       showHint('Kamera-tila');
     } else {
-      el.cam.style.opacity = '0.08';
-      state.mapVisible = false;
+      setCameraVisible(false);
       showHint('HUD-tila');
     }
   } else {
@@ -1249,7 +1349,7 @@ document.addEventListener('touchend', (e) => {
       showHint('Keskitetty');
     } else {
       state.mapVisible = !state.mapVisible;
-      el.cam.style.opacity = state.mapVisible ? '1' : '0.08';
+      setCameraVisible(state.mapVisible);
       showHint(state.mapVisible ? 'Kamera näkyy' : 'Kamera piilossa');
     }
   }
@@ -1259,10 +1359,9 @@ window.addEventListener('load', () => {
   updateLoop();
   setMode('Valmis');
   showHint('Paina Aloita');
+  initUltraVoice();
 
   if ('speechSynthesis' in window) {
-    try {
-      window.speechSynthesis.getVoices();
-    } catch {}
+    try { window.speechSynthesis.getVoices(); } catch {}
   }
 });

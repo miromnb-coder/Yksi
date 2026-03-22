@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Halo AI AR</title>
+  <title>Halo Ultra V3</title>
   <style>
     :root{
       --bg:#020203;
@@ -50,20 +50,12 @@
       position: fixed;
       inset: 0;
       pointer-events: none;
-      opacity: .14;
+      opacity: .12;
       mix-blend-mode: soft-light;
       background-image:
-        linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+        linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
       background-size: 3px 3px;
-    }
-
-    #app {
-      position: fixed;
-      inset: 0;
-      display: grid;
-      grid-template-rows: 1fr auto;
-      z-index: 5;
     }
 
     #topBar {
@@ -186,15 +178,8 @@
       animation: breathe 3.2s ease-in-out infinite;
     }
 
-    @keyframes spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    @keyframes breathe {
-      0%,100% { transform: scale(.82); opacity: .38; }
-      50% { transform: scale(.90); opacity: .68; }
-    }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes breathe { 0%,100% { transform: scale(.82); opacity: .38; } 50% { transform: scale(.90); opacity: .68; } }
 
     .arrowWrap {
       width: 88px;
@@ -256,9 +241,7 @@
       z-index: 22;
     }
 
-    #micState.show {
-      opacity: 1;
-    }
+    #micState.show { opacity: 1; }
 
     #hint {
       position: absolute;
@@ -279,9 +262,7 @@
       z-index: 22;
     }
 
-    #hint.show {
-      opacity: 1;
-    }
+    #hint.show { opacity: 1; }
 
     #bottom {
       margin: 0 12px 12px;
@@ -349,45 +330,43 @@
   <div id="scrim"></div>
   <div id="grain"></div>
 
-  <div id="app">
-    <div id="micState">Kuuntelen…</div>
+  <div id="micState">Kuuntelen…</div>
 
-    <div id="topBar">
-      <div id="search" class="glass">
-        <input id="dest" placeholder="Kirjoita kohde, esim. Kamppi Helsinki" />
-      </div>
-      <button class="btn" id="startBtn">Aloita</button>
-      <button class="btn" id="micBtn">Mikki</button>
-      <button class="btn" id="stopBtn">Lopeta</button>
+  <div id="topBar">
+    <div id="search" class="glass">
+      <input id="dest" placeholder="Kirjoita kohde, esim. Kamppi Helsinki" />
     </div>
+    <button class="btn" id="startBtn">Aloita</button>
+    <button class="btn" id="micBtn">Mikki</button>
+    <button class="btn" id="stopBtn">Lopeta</button>
+  </div>
 
-    <div id="hint">Sano: “Vie Kamppiin”, “Vie lähimpään ruokakauppaan”, “Lopeta”, “Missä olen”, “Kuinka pitkä matka”</div>
+  <div id="hint">Sano: “Vie Kamppiin”, “Vie lähimpään ruokakauppaan”, “Lopeta”, “Missä olen”, “Kuinka pitkä matka”</div>
 
-    <div id="center">
-      <div class="ring">
-        <div class="arrowWrap" id="arrowWrap">
-          <svg class="arrowSvg" id="arrowSvg" viewBox="0 0 100 100" aria-hidden="true">
-            <path d="M50 14 L50 70" fill="none" stroke="white" stroke-width="8" stroke-linecap="round"></path>
-            <path d="M28 36 L50 14 L72 36" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-        </div>
+  <div id="center">
+    <div class="ring">
+      <div class="arrowWrap" id="arrowWrap">
+        <svg class="arrowSvg" id="arrowSvg" viewBox="0 0 100 100" aria-hidden="true">
+          <path d="M50 14 L50 70" fill="none" stroke="white" stroke-width="8" stroke-linecap="round"></path>
+          <path d="M28 36 L50 14 L72 36" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
       </div>
-      <div id="distance">—</div>
-      <div id="sub">Valmis</div>
     </div>
+    <div id="distance">—</div>
+    <div id="sub">Valmis</div>
+  </div>
 
-    <div id="bottom">
-      <div id="chips">
-        <div class="chip" id="gpsChip">Sijainti: pois</div>
-        <div class="chip" id="compassChip">Kompassi: pois</div>
-        <div class="chip" id="modeChip">Tila: Valmis</div>
-      </div>
-      <div id="progress"><div id="bar"></div></div>
-      <div id="legend">
-        <div>Swipe vasen/oikea: HUD / Kamera</div>
-        <div>Puhe: suomi</div>
-        <div>Nominatim + OSRM</div>
-      </div>
+  <div id="bottom">
+    <div id="chips">
+      <div class="chip" id="gpsChip">Sijainti: pois</div>
+      <div class="chip" id="compassChip">Kompassi: pois</div>
+      <div class="chip" id="modeChip">Tila: Valmis</div>
+    </div>
+    <div id="progress"><div id="bar"></div></div>
+    <div id="legend">
+      <div>Swipe vasen/oikea: HUD / Kamera</div>
+      <div>Puhe: suomi</div>
+      <div>Nominatim + OSRM</div>
     </div>
   </div>
 
@@ -415,7 +394,6 @@
 
     const state = {
       cameraOn: false,
-      locationOn: false,
       compassOn: false,
       listening: false,
       recording: false,
@@ -436,9 +414,8 @@
       lastVibeAt: 0,
       lastRouteAt: 0,
       routeLoading: false,
-      lastSpeechVoice: null,
-      routeMode: 'idle',
-      mapVisible: true
+      mapVisible: true,
+      ttsVoice: null
     };
 
     const ALIASES = {
@@ -540,7 +517,7 @@
         u.volume = 1.0;
         const voice = bestFinnishVoice();
         if (voice) u.voice = voice;
-        state.lastSpeechVoice = voice || null;
+        state.ttsVoice = voice || null;
         window.speechSynthesis.speak(u);
       } catch {}
     }
@@ -649,29 +626,30 @@
     }
 
     async function callAI(text) {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          currentLocation: state.current,
-          activeTarget: state.targetLabel,
-          lastQuery: state.lastQuery,
-          lastIntent: state.lastIntent
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'AI-virhe');
-      return data;
+      try {
+        const res = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            currentLocation: state.current,
+            activeTarget: state.targetLabel,
+            lastQuery: state.lastQuery,
+            lastIntent: state.lastIntent
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'AI-virhe');
+        return data;
+      } catch {
+        return null;
+      }
     }
 
     async function resolveCommand(text) {
-      try {
-        const ai = await callAI(text);
-        const parsed = normalizeAiResult(ai);
-        if (parsed) return parsed;
-      } catch {}
+      const ai = await callAI(text);
+      const parsed = normalizeAiResult(ai);
+      if (parsed) return parsed;
       return localParseCommand(text);
     }
 
@@ -798,6 +776,35 @@
         return { lat: loc[1], lng: loc[0] };
       }
       return fallback;
+    }
+
+    function stepInstruction(step) {
+      if (!step) return '';
+      const type = String(step?.maneuver?.type || '').toLowerCase();
+      const modifier = String(step?.maneuver?.modifier || '').toLowerCase();
+      const name = String(step?.name || '').trim();
+
+      const turnMap = {
+        left: 'vasemmalle',
+        right: 'oikealle',
+        slight left: 'hieman vasemmalle',
+        slight right: 'hieman oikealle',
+        sharp left: 'jyrkästi vasemmalle',
+        sharp right: 'jyrkästi oikealle'
+      };
+
+      if (type === 'arrive') return 'Perillä';
+      if (type === 'depart') return 'Lähde liikkeelle';
+      if (type === 'roundabout') return 'Aja liikenneympyrään';
+      if (type === 'rotary') return 'Aja kiertoliittymään';
+      if (type === 'fork') return `Pidä ${turnMap[modifier] || 'suunta'}`;
+      if (type === 'merge') return `Liity ${name ? name : 'tiehen'}`;
+      if (type === 'on ramp') return 'Aja rampille';
+      if (type === 'off ramp') return 'Poistu rampista';
+      if (type === 'turn') return `Käänny ${turnMap[modifier] || 'suuntaan'}${name ? `, ${name}` : ''}`;
+      if (type === 'continue') return name ? `Jatka ${name}` : 'Jatka eteenpäin';
+      if (type === 'new name') return name ? `Jatka ${name}` : 'Jatka';
+      return name ? `Jatka ${name}` : 'Jatka';
     }
 
     function currentStep() {
@@ -933,6 +940,8 @@
       state.route = null;
       state.routeSteps = [];
       state.activeStepIndex = 0;
+      state.lastRouteAt = 0;
+      state.routeLoading = false;
     }
 
     async function buildRoute() {
@@ -1001,8 +1010,7 @@
         els.sub.textContent = 'Perillä pian';
       } else {
         els.distance.textContent = formatDistance(dAnchor);
-        const instruction = step?.instructions ? String(step.instructions).replace(/<[^>]+>/g, '') : '';
-        els.sub.textContent = instruction || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
+        els.sub.textContent = stepInstruction(step) || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
       }
 
       const show = state.listening || !!state.target || dTarget < 120 || Math.abs(diff) > 18;
@@ -1037,16 +1045,6 @@
       updateHUD();
       showHint('Pysäytetty');
       speak('Navigointi pysäytetty.');
-    }
-
-    function stopRecording() {
-      clearTimeout(state.recordTimer);
-      if (!state.recording) return;
-      try {
-        if (state.recorder && state.recorder.state !== 'inactive') {
-          state.recorder.stop();
-        }
-      } catch {}
     }
 
     async function blobToBase64(blob) {
@@ -1102,6 +1100,7 @@
         state.targetLabel = place.label || q;
         state.lastQuery = q;
         state.lastIntent = 'navigate';
+
         if (spokenReply) speak(spokenReply);
         else speak(`Selvä, etsitään ${state.targetLabel}.`);
 
@@ -1114,6 +1113,10 @@
         speak('En löytänyt paikkaa. Kokeile tarkempaa nimeä.');
         showHint('Paikkaa ei löytynyt');
       }
+    }
+
+    function playLatestAudio() {
+      if (!state.lastSpeechVoice) return;
     }
 
     async function handleCommand(text) {
@@ -1328,6 +1331,7 @@
 
       await ensureSession();
       const parsed = await resolveCommand(q);
+
       if (parsed.intent === 'navigate') {
         await startNavigationToQuery(parsed.query || q, parsed.nearby, parsed.reply);
         return;
@@ -1335,16 +1339,6 @@
 
       if (parsed.intent === 'stop') {
         await stopNavigation();
-        return;
-      }
-
-      if (parsed.intent === 'whereami') {
-        await handleCommand(q);
-        return;
-      }
-
-      if (parsed.intent === 'status') {
-        await handleCommand(q);
         return;
       }
 
@@ -1371,6 +1365,7 @@
       try { state.speechRec?.stop(); } catch {}
       try { state.recorder?.stop(); } catch {}
       stopNavigation();
+      stopCamera();
     });
 
     els.dest.addEventListener('keydown', (e) => {

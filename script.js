@@ -1,29 +1,30 @@
-/* global google */
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  current: null,
+  target: null,
+  targetLabel: '',
+  routeSteps: [],
+  activeStepIndex: 0,
+  watchId: null,
+  currentHeading: null,
+  compassEnabled: false,
+  isListening: false,
+  recording: false,
+  recorder: null,
+  stream: null,
+  chunks: [],
+  mapVisible: true,
+  lastVibeAt: 0,
+  routeLine: null,
+  currentMarker: null,
+  targetMarker: null
+};
 
 let map;
-let geocoder;
-let placesService;
-let directionsService;
-let directionsRenderer;
-let autocomplete;
-
-let currentLocation = null;
-let targetPlace = null;
-let targetLabel = '';
-let routeSteps = [];
-let activeStepIndex = 0;
-let watchId = null;
-let currentHeading = null;
-let compassEnabled = false;
 let voiceRecognition = null;
-let isListening = false;
-let lastVibeAt = 0;
-let mapVisible = true;
+let mapReady = false;
 
-let currentMarker = null;
-let targetMarker = null;
-
-const $ = (id) => document.getElementById(id);
 const centerEl = $('center');
 const arrowSvg = $('arrowSvg');
 const arrowWrap = $('arrowWrap');
@@ -98,7 +99,6 @@ function arrowRotationFromDiff(d) {
 function speakFi(text) {
   const clean = String(text || '').trim();
   if (!clean || !('speechSynthesis' in window)) return;
-
   try {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(clean);
@@ -106,14 +106,12 @@ function speakFi(text) {
     u.rate = 0.96;
     u.pitch = 1.0;
     u.volume = 1.0;
-
     const voices = window.speechSynthesis.getVoices();
     const voice =
       voices.find(v => /^fi\b/i.test(v.lang)) ||
       voices.find(v => /finn/i.test(v.name)) ||
       voices.find(v => /siri/i.test(v.name)) ||
       null;
-
     if (voice) u.voice = voice;
     window.speechSynthesis.speak(u);
   } catch {}
@@ -160,7 +158,6 @@ function localParseCommand(text) {
     else if (t.includes('apteekki')) query = 'apteekki';
     else if (t.includes('asema')) query = 'asema';
     else if (t.includes('pizza') || t.includes('ravintola')) query = 'ravintola';
-
     return { intent: 'navigate', query, nearby: true };
   }
 
@@ -196,8 +193,8 @@ async function callAI(text) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
-      currentLocation,
-      activeTarget: targetLabel
+      currentLocation: state.current,
+      activeTarget: state.targetLabel
     })
   });
 
@@ -208,79 +205,206 @@ async function callAI(text) {
 
 async function resolveVoiceQuery(text) {
   try {
-    const ai = await callAI(text);
-    return ai;
+    return await callAI(text);
   } catch {
     return localParseCommand(text);
   }
 }
 
-function geocodeAddress(address) {
+function geocodePlace(query, searchMode = 'exact') {
   return new Promise((resolve, reject) => {
-    const query = address.toLowerCase().includes('finland') ? address : `${address}, Finland`;
-    geocoder.geocode({ address: query }, (results, status) => {
-      if (status === 'OK' && results && results[0]) {
-        resolve({
-          location: {
-            lat: results[0].geometry.location.lat(),
-            lng: results[0].geometry.location.lng()
-          },
-          label: results[0].formatted_address || address
-        });
-      } else {
-        reject(new Error('Paikkaa ei löytynyt'));
-      }
-    });
-  });
-}
-
-function searchNearbyPlace(query) {
-  return new Promise((resolve, reject) => {
-    if (!currentLocation) {
-      reject(new Error('Sijainti puuttuu'));
+    const q = String(query || '').trim();
+    if (!q) {
+      reject(new Error('Tyhjä kohde'));
       return;
     }
 
-    placesService.textSearch(
-      {
-        query,
-        location: new google.maps.LatLng(currentLocation.lat, currentLocation.lng),
-        radius: 5000
-      },
-      (results, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && results && results[0]) {
-          const r = results[0];
+    const params = new URLSearchParams({
+      format: 'jsonv2',
+      q,
+      limit: '1',
+      addressdetails: '1',
+      'accept-language': 'fi'
+    });
+
+    if (searchMode === 'nearby' && state.current) {
+      const lat = state.current.lat;
+      const lng = state.current.lng;
+      params.set('viewbox', `${lng - 0.15},${lat + 0.10},${lng + 0.15},${lat - 0.10}`);
+      params.set('bounded', '1');
+    } else if (!/finland|suomi|helsinki|espoo|vantaa|tampere|turku|oulu|jyväskylä|rovaniemi/i.test(q)) {
+      params.set('q', `${q}, Finland`);
+    }
+
+    fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: { 'Accept': 'application/json' }
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length) {
           resolve({
-            location: {
-              lat: r.geometry.location.lat(),
-              lng: r.geometry.location.lng()
-            },
-            label: r.name || r.formatted_address || query
+            lat: parseFloat(data[0].lat),
+            lng: parseFloat(data[0].lon),
+            label: data[0].display_name || q
           });
         } else {
           reject(new Error('Paikkaa ei löytynyt'));
         }
-      }
-    );
+      })
+      .catch(reject);
   });
+}
+
+function getRoute(from, to) {
+  const url = `https://router.project-osrm.org/route/v1/foot/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&steps=true`;
+  return fetch(url)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.routes || !data.routes.length) throw new Error('Reittiä ei löytynyt');
+      return data.routes[0];
+    });
+}
+
+function extractSteps(route) {
+  const steps = [];
+  for (const leg of route.legs || []) {
+    for (const step of leg.steps || []) steps.push(step);
+  }
+  return steps;
+}
+
+function stepLocation(step, fallback) {
+  const loc = step?.maneuver?.location;
+  if (Array.isArray(loc) && loc.length >= 2) {
+    return { lat: loc[1], lng: loc[0] };
+  }
+  return fallback;
+}
+
+function currentStep() {
+  if (!state.routeSteps.length) return null;
+  return state.routeSteps[Math.min(state.activeStepIndex, state.routeSteps.length - 1)];
+}
+
+function drawRoute(routeGeojson) {
+  if (state.routeLine) {
+    map.removeLayer(state.routeLine);
+    state.routeLine = null;
+  }
+
+  if (routeGeojson) {
+    state.routeLine = L.geoJSON(routeGeojson, {
+      style: {
+        color: '#ffffff',
+        weight: 5,
+        opacity: 0.8
+      }
+    }).addTo(map);
+
+    map.fitBounds(state.routeLine.getBounds(), { padding: [40, 40] });
+  }
+
+  updateMarkers();
+}
+
+function updateMarkers() {
+  if (state.current) {
+    const pos = [state.current.lat, state.current.lng];
+    if (!state.currentMarker) {
+      state.currentMarker = L.circleMarker(pos, {
+        radius: 8,
+        weight: 2,
+        color: '#fff',
+        fillColor: '#fff',
+        fillOpacity: 1
+      }).addTo(map);
+    } else {
+      state.currentMarker.setLatLng(pos);
+    }
+  }
+
+  if (state.target) {
+    const pos = [state.target.lat, state.target.lng];
+    if (!state.targetMarker) {
+      state.targetMarker = L.circleMarker(pos, {
+        radius: 7,
+        weight: 2,
+        color: '#fff',
+        fillColor: 'rgba(255,255,255,.18)',
+        fillOpacity: 1
+      }).addTo(map);
+    } else {
+      state.targetMarker.setLatLng(pos);
+    }
+  }
+}
+
+function setMapVisible(v) {
+  state.mapVisible = v;
+  mapEl.style.opacity = v ? '1' : '0.06';
+}
+
+function updateHUD() {
+  if (!state.current || !state.target) return;
+
+  const step = currentStep();
+  const anchor = step ? stepLocation(step, state.target) : state.target;
+
+  const dTarget = haversine(state.current, state.target);
+  const dAnchor = haversine(state.current, anchor);
+  const b = bearing(state.current, anchor);
+  const h = state.currentHeading;
+  const diff = h == null ? 0 : diffAngle(b, h);
+  const rot = arrowRotationFromDiff(diff);
+
+  arrowSvg.style.transform = `rotate(${rot}deg)`;
+
+  if (dTarget < 20) {
+    distanceEl.textContent = 'NYT';
+    subEl.textContent = 'Perillä pian';
+  } else {
+    distanceEl.textContent = formatDistance(dAnchor);
+    const stepText = step?.instructions ? stripHtml(step.instructions) : '';
+    subEl.textContent = stepText || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
+  }
+
+  gpsChip.textContent = 'Sijainti: päällä';
+  compassChip.textContent = state.compassEnabled ? 'Kompassi: päällä' : 'Kompassi: pois';
+  setMode(state.isListening ? 'Kuuntelen' : (state.target ? 'Navigointi' : 'Valmis'));
+
+  const show = state.isListening || !!state.target || dTarget < 120 || Math.abs(diff) > 18;
+  centerEl.classList.toggle('show', !!show);
+
+  const pct = Math.max(0, Math.min(100, 100 - Math.min(dTarget, 1500) / 15));
+  bar.style.width = `${pct}%`;
+
+  if (dTarget < 20 && Date.now() - state.lastVibeAt > 1200) {
+    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+    state.lastVibeAt = Date.now();
+  }
+
+  arrowWrap.style.transform = dTarget < 20 ? 'scale(1.06)' : 'scale(1)';
+
+  if (state.mapVisible && state.current) {
+    map.panTo([state.current.lat, state.current.lng], { animate: true });
+  }
 }
 
 function reverseGeocode(latLng) {
   return new Promise((resolve, reject) => {
-    geocoder.geocode({ location: latLng }, (results, status) => {
-      if (status === 'OK' && results && results[0]) {
-        resolve(results[0].formatted_address);
-      } else {
-        reject(new Error('Ei löytynyt'));
-      }
-    });
+    const geocoder = L.Control.Geocoder ? null : null;
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latLng.lat}&lon=${latLng.lng}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.display_name) resolve(data.display_name);
+        else reject(new Error('Ei löytynyt'));
+      })
+      .catch(reject);
   });
 }
 
 function getLocationNow(timeoutMs = 8000) {
-  if (!navigator.geolocation) {
-    return Promise.reject(new Error('Sijaintia ei tueta'));
-  }
+  if (!navigator.geolocation) return Promise.reject(new Error('Sijaintia ei tueta'));
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Sijainti ei löytynyt ajoissa')), timeoutMs);
@@ -288,13 +412,13 @@ function getLocationNow(timeoutMs = 8000) {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         clearTimeout(timer);
-        currentLocation = {
+        state.current = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
         gpsChip.textContent = 'Sijainti: päällä';
-        resolve(currentLocation);
+        resolve(state.current);
       },
       (err) => {
         clearTimeout(timer);
@@ -312,11 +436,11 @@ function getLocationNow(timeoutMs = 8000) {
 function watchLocation() {
   if (!navigator.geolocation) return;
 
-  if (watchId) navigator.geolocation.clearWatch(watchId);
+  if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
 
-  watchId = navigator.geolocation.watchPosition(
+  state.watchId = navigator.geolocation.watchPosition(
     (pos) => {
-      currentLocation = {
+      state.current = {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         accuracy: pos.coords.accuracy
@@ -337,7 +461,7 @@ function watchLocation() {
 function enableCompass() {
   return new Promise(async (resolve) => {
     try {
-      if (compassEnabled) {
+      if (state.compassEnabled) {
         resolve(true);
         return;
       }
@@ -354,13 +478,13 @@ function enableCompass() {
 
       window.addEventListener('deviceorientation', (e) => {
         if (typeof e.webkitCompassHeading === 'number') {
-          currentHeading = e.webkitCompassHeading;
+          state.currentHeading = e.webkitCompassHeading;
         } else if (e.alpha != null) {
-          currentHeading = 360 - e.alpha;
+          state.currentHeading = 360 - e.alpha;
         }
       }, true);
 
-      compassEnabled = true;
+      state.compassEnabled = true;
       compassChip.textContent = 'Kompassi: päällä';
       resolve(true);
     } catch {
@@ -371,113 +495,45 @@ function enableCompass() {
 }
 
 function clearRoute() {
-  routeSteps = [];
-  activeStepIndex = 0;
+  state.routeSteps = [];
+  state.activeStepIndex = 0;
 
-  if (directionsRenderer) {
-    directionsRenderer.set('directions', null);
+  if (state.routeLine) {
+    map.removeLayer(state.routeLine);
+    state.routeLine = null;
   }
 
-  if (currentMarker) {
-    currentMarker.setMap(null);
-    currentMarker = null;
+  if (state.currentMarker) {
+    map.removeLayer(state.currentMarker);
+    state.currentMarker = null;
   }
 
-  if (targetMarker) {
-    targetMarker.setMap(null);
-    targetMarker = null;
-  }
-}
-
-function updateMarkers() {
-  if (!map) return;
-
-  if (currentLocation) {
-    const pos = { lat: currentLocation.lat, lng: currentLocation.lng };
-    if (!currentMarker) {
-      currentMarker = new google.maps.Marker({
-        position: pos,
-        map,
-        title: 'Olet tässä'
-      });
-    } else {
-      currentMarker.setPosition(pos);
-    }
-  }
-
-  if (targetPlace) {
-    if (!targetMarker) {
-      targetMarker = new google.maps.Marker({
-        position: targetPlace,
-        map,
-        title: targetLabel || 'Kohde'
-      });
-    } else {
-      targetMarker.setPosition(targetPlace);
-    }
-  }
-}
-
-function currentStep() {
-  if (!routeSteps.length) return null;
-  return routeSteps[Math.min(activeStepIndex, routeSteps.length - 1)];
-}
-
-function stepLocation(step, fallback) {
-  if (step && step.end_location) {
-    return {
-      lat: typeof step.end_location.lat === 'function' ? step.end_location.lat() : step.end_location.lat,
-      lng: typeof step.end_location.lng === 'function' ? step.end_location.lng() : step.end_location.lng
-    };
-  }
-  return fallback;
-}
-
-function maybeAdvanceStep() {
-  const step = currentStep();
-  if (!step || !currentLocation) return;
-
-  const p = stepLocation(step, targetPlace);
-  const d = haversine(currentLocation, p);
-
-  if (d < 28 && activeStepIndex < routeSteps.length - 1) {
-    activeStepIndex += 1;
-    if (navigator.vibrate) navigator.vibrate(30);
+  if (state.targetMarker) {
+    map.removeLayer(state.targetMarker);
+    state.targetMarker = null;
   }
 }
 
 async function buildRoute() {
-  if (!currentLocation || !targetPlace) return;
+  if (!state.current || !state.target) return;
 
-  const request = {
-    origin: currentLocation,
-    destination: targetPlace,
-    travelMode: google.maps.TravelMode.WALKING
-  };
-
-  const result = await new Promise((resolve, reject) => {
-    directionsService.route(request, (response, status) => {
-      if (status === 'OK' && response) resolve(response);
-      else reject(new Error('Reittiä ei löytynyt'));
-    });
-  });
-
-  routeSteps = result.routes?.[0]?.legs?.[0]?.steps || [];
-  activeStepIndex = 0;
-  directionsRenderer.setDirections(result);
+  const route = await getRoute(state.current, state.target);
+  state.routeSteps = extractSteps(route);
+  state.activeStepIndex = 0;
+  drawRoute(route.geometry);
   updateMarkers();
 }
 
 async function startNavigation() {
-  if (!targetPlace) return;
+  if (!state.target) return;
 
   await enableCompass();
   await getLocationNow();
   watchLocation();
 
   setMode('Haetaan reitti');
-  showHint(`Kohde: ${targetLabel || 'valittu paikka'}`);
-  speakFi(`Aloitetaan navigointi kohteeseen ${targetLabel || 'valittu paikka'}.`);
+  showHint(`Kohde: ${state.targetLabel || 'valittu paikka'}`);
+  speakFi(`Aloitetaan navigointi kohteeseen ${state.targetLabel || 'valittu paikka'}.`);
 
   try {
     await buildRoute();
@@ -493,73 +549,33 @@ async function startNavigation() {
 }
 
 function stopNavigation() {
-  if (watchId) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
+  if (state.watchId) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null;
   }
 
-  currentLocation = null;
-  targetPlace = null;
-  targetLabel = '';
+  state.current = null;
+  state.target = null;
+  state.targetLabel = '';
   clearRoute();
   gpsChip.textContent = 'Sijainti: pois';
-  compassChip.textContent = compassEnabled ? 'Kompassi: päällä' : 'Kompassi: pois';
+  compassChip.textContent = state.compassEnabled ? 'Kompassi: päällä' : 'Kompassi: pois';
   setMode('Valmis');
   centerEl.classList.remove('show');
   showHint('Pysäytetty');
 }
 
-function updateHUD() {
-  if (!currentLocation || !targetPlace) return;
-
+function maybeAdvanceStep() {
   const step = currentStep();
-  const anchor = step ? stepLocation(step, targetPlace) : targetPlace;
+  if (!step || !state.current) return;
 
-  const dTarget = haversine(currentLocation, targetPlace);
-  const dAnchor = haversine(currentLocation, anchor);
-  const b = bearing(currentLocation, anchor);
-  const h = currentHeading;
-  const diff = h == null ? 0 : diffAngle(b, h);
-  const rot = arrowRotationFromDiff(diff);
+  const p = stepLocation(step, state.target);
+  const d = haversine(state.current, p);
 
-  arrowSvg.style.transform = `rotate(${rot}deg)`;
-
-  if (dTarget < 20) {
-    distanceEl.textContent = 'NYT';
-    subEl.textContent = 'Perillä pian';
-  } else {
-    distanceEl.textContent = formatDistance(dAnchor);
-    const stepText = step?.instructions ? stripHtml(step.instructions) : '';
-    subEl.textContent = stepText || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
+  if (d < 28 && state.activeStepIndex < state.routeSteps.length - 1) {
+    state.activeStepIndex += 1;
+    if (navigator.vibrate) navigator.vibrate(30);
   }
-
-  gpsChip.textContent = 'Sijainti: päällä';
-  compassChip.textContent = compassEnabled ? 'Kompassi: päällä' : 'Kompassi: pois';
-  setMode(isListening ? 'Kuuntelen' : (targetPlace ? 'Navigointi' : 'Valmis'));
-
-  const show = isListening || !!targetPlace || dTarget < 120 || Math.abs(diff) > 18;
-  centerEl.classList.toggle('show', !!show);
-
-  const pct = Math.max(0, Math.min(100, 100 - Math.min(dTarget, 1500) / 15));
-  bar.style.width = `${pct}%`;
-
-  if (dTarget < 20 && Date.now() - lastVibeAt > 1200) {
-    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
-    lastVibeAt = Date.now();
-  }
-
-  arrowWrap.style.transform = dTarget < 20 ? 'scale(1.06)' : 'scale(1)';
-
-  if (mapVisible && currentLocation && map) {
-    map.panTo(currentLocation);
-  }
-
-  maybeAdvanceStep();
-}
-
-function updateLoop() {
-  if (currentLocation && targetPlace) updateHUD();
-  requestAnimationFrame(updateLoop);
 }
 
 async function startFromInput(query) {
@@ -583,25 +599,25 @@ async function startFromInput(query) {
     }
 
     if (parsed.intent === 'whereami') {
-      if (!currentLocation) {
+      if (!state.current) {
         speakFi('Sijaintia ei vielä ole.');
         return;
       }
       try {
-        const addr = await reverseGeocode(currentLocation);
+        const addr = await reverseGeocode(state.current);
         speakFi(`Olet nyt kohdassa ${addr}.`);
       } catch {
-        speakFi(`Sijaintisi tarkkuus on noin ${Math.round(currentLocation.accuracy || 0)} metriä.`);
+        speakFi(`Sijaintisi tarkkuus on noin ${Math.round(state.current.accuracy || 0)} metriä.`);
       }
       return;
     }
 
     if (parsed.intent === 'status') {
-      if (!currentLocation || !targetPlace) {
+      if (!state.current || !state.target) {
         speakFi('Aktiivista navigointia ei ole käynnissä.');
         return;
       }
-      const d = haversine(currentLocation, targetPlace);
+      const d = haversine(state.current, state.target);
       speakFi(d < 20 ? 'Olet perillä.' : `Matkaa on noin ${formatDistance(d)}.`);
       return;
     }
@@ -623,11 +639,11 @@ async function startFromInput(query) {
 
       try {
         const place = parsed.nearby
-          ? await searchNearbyPlace(queryToUse)
-          : await geocodeAddress(queryToUse);
+          ? await geocodePlace(queryToUse, 'nearby')
+          : await geocodePlace(queryToUse, 'exact');
 
-        targetPlace = place.location;
-        targetLabel = place.label || queryToUse;
+        state.target = { lat: place.lat, lng: place.lng };
+        state.targetLabel = place.label || queryToUse;
         updateMarkers();
         await startNavigation();
       } catch (e) {
@@ -646,63 +662,109 @@ async function startFromInput(query) {
   }
 }
 
-function startVoiceRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    showHint('Puheentunnistus ei ole käytössä');
-    speakFi('Tämä selain ei tue puheentunnistusta.');
-    return;
-  }
+async function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
-  if (isListening) {
-    try { voiceRecognition?.stop(); } catch {}
-    return;
-  }
+async function transcribeAudioBlob(blob, mimeType) {
+  const audioBase64 = await blobToBase64(blob);
+  const res = await fetch('/api/transcribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      audioBase64,
+      mimeType: mimeType || blob.type || 'audio/webm'
+    })
+  });
 
-  voiceRecognition = new SpeechRecognition();
-  voiceRecognition.lang = 'fi-FI';
-  voiceRecognition.continuous = false;
-  voiceRecognition.interimResults = false;
-  voiceRecognition.maxAlternatives = 1;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Transkriptio epäonnistui');
+  return data.text || '';
+}
 
-  voiceRecognition.onstart = () => {
-    isListening = true;
-    $('micBtn').textContent = 'Kuuntelen';
-    micState.classList.add('show');
-    setMode('Kuuntelen');
-    centerEl.classList.add('show');
-    showHint('Puhu nyt');
-    speakFi('Kuuntelen.');
-  };
-
-  voiceRecognition.onend = () => {
-    isListening = false;
-    $('micBtn').textContent = 'Mikki';
-    micState.classList.remove('show');
-    setMode(targetPlace ? 'Navigointi' : 'Valmis');
-    updateHUD();
-  };
-
-  voiceRecognition.onerror = (e) => {
-    isListening = false;
-    $('micBtn').textContent = 'Mikki';
-    micState.classList.remove('show');
-    setMode(targetPlace ? 'Navigointi' : 'Valmis');
-    showHint('Puhe ei onnistunut');
-    console.log('speech error', e);
-    speakFi('Puheentunnistus epäonnistui.');
-  };
-
-  voiceRecognition.onresult = (event) => {
-    const transcript = event.results[event.results.length - 1][0].transcript || '';
-    handleUserText(transcript);
-  };
+async function startRecording() {
+  if (state.recording) return;
 
   try {
-    voiceRecognition.start();
-  } catch {
-    showHint('Puhe ei käynnistynyt');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    state.stream = stream;
+
+    const preferredTypes = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4'
+    ];
+
+    const mimeType = preferredTypes.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+    const options = mimeType ? { mimeType } : undefined;
+
+    const recorder = new MediaRecorder(stream, options);
+    state.recorder = recorder;
+    state.chunks = [];
+    state.recording = true;
+    state.isListening = true;
+
+    $('micBtn').textContent = 'Puhu';
+    micState.classList.add('show');
+    setMode('Kuuntelen');
+    showHint('Puhu nyt');
+    speakFi('Kuuntelen.');
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) state.chunks.push(e.data);
+    };
+
+    recorder.onstop = async () => {
+      try {
+        const blob = new Blob(state.chunks, { type: mimeType || 'audio/webm' });
+        const transcript = await transcribeAudioBlob(blob, mimeType || blob.type);
+        await handleUserText(transcript);
+      } catch (e) {
+        console.error(e);
+        showHint('Puhe ei onnistunut');
+        speakFi('Puheentunnistus epäonnistui.');
+      } finally {
+        state.recording = false;
+        state.isListening = false;
+        $('micBtn').textContent = 'Mikki';
+        micState.classList.remove('show');
+        if (state.stream) {
+          state.stream.getTracks().forEach(t => t.stop());
+          state.stream = null;
+        }
+        state.recorder = null;
+        updateHUD();
+      }
+    };
+
+    recorder.start();
+    state.recordTimer = setTimeout(() => stopRecording(), 8000);
+  } catch (e) {
+    console.error(e);
+    state.recording = false;
+    micState.classList.remove('show');
+    showHint('Mikrofoni ei auennut');
+    speakFi('Mikrofoni ei auennut.');
   }
+}
+
+function stopRecording() {
+  clearTimeout(state.recordTimer);
+  if (!state.recording) return;
+  try {
+    if (state.recorder && state.recorder.state !== 'inactive') {
+      state.recorder.stop();
+    }
+  } catch {}
 }
 
 async function handleUserText(text) {
@@ -723,25 +785,25 @@ async function handleUserText(text) {
   }
 
   if (parsed.intent === 'whereami') {
-    if (!currentLocation) {
+    if (!state.current) {
       speakFi('Sijaintia ei vielä ole.');
       return;
     }
     try {
-      const addr = await reverseGeocode(currentLocation);
+      const addr = await reverseGeocode(state.current);
       speakFi(`Olet nyt kohdassa ${addr}.`);
     } catch {
-      speakFi(`Sijaintisi tarkkuus on noin ${Math.round(currentLocation.accuracy || 0)} metriä.`);
+      speakFi(`Sijaintisi tarkkuus on noin ${Math.round(state.current.accuracy || 0)} metriä.`);
     }
     return;
   }
 
   if (parsed.intent === 'status') {
-    if (!currentLocation || !targetPlace) {
+    if (!state.current || !state.target) {
       speakFi('Aktiivista navigointia ei ole käynnissä.');
       return;
     }
-    const d = haversine(currentLocation, targetPlace);
+    const d = haversine(state.current, state.target);
     speakFi(d < 20 ? 'Olet perillä.' : `Matkaa on noin ${formatDistance(d)}.`);
     return;
   }
@@ -763,11 +825,11 @@ async function handleUserText(text) {
 
     try {
       const place = parsed.nearby
-        ? await searchNearbyPlace(queryToUse)
-        : await geocodeAddress(queryToUse);
+        ? await geocodePlace(queryToUse, 'nearby')
+        : await geocodePlace(queryToUse, 'exact');
 
-      targetPlace = place.location;
-      targetLabel = place.label || queryToUse;
+      state.target = { lat: place.lat, lng: place.lng };
+      state.targetLabel = place.label || queryToUse;
       updateMarkers();
       await startNavigation();
     } catch (e) {
@@ -781,60 +843,37 @@ async function handleUserText(text) {
   speakFi('En ymmärtänyt komentoa.');
 }
 
-function toggleMap() {
-  mapVisible = !mapVisible;
-  mapEl.style.opacity = mapVisible ? '1' : '0.06';
-  showHint(mapVisible ? 'Kartta näkyy' : 'Kartta piilossa');
-}
+function initLeafletMap() {
+  map = L.map('map', {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([60.1699, 24.9384], 15);
 
-function initMap() {
-  map = new google.maps.Map(mapEl, {
-    center: { lat: 60.1699, lng: 24.9384 },
-    zoom: 15,
-    disableDefaultUI: true,
-    clickableIcons: false,
-    gestureHandling: 'greedy',
-    backgroundColor: '#111111'
-  });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
 
-  geocoder = new google.maps.Geocoder();
-  placesService = new google.maps.places.PlacesService(map);
-  directionsService = new google.maps.DirectionsService();
-  directionsRenderer = new google.maps.DirectionsRenderer({
-    map,
-    suppressMarkers: true,
-    preserveViewport: false
-  });
-
-  autocomplete = new google.maps.places.Autocomplete(destInput, {
-    fields: ['geometry', 'name', 'formatted_address']
-  });
-
-  autocomplete.addListener('place_changed', async () => {
-    const place = autocomplete.getPlace();
-    if (place && place.geometry && place.geometry.location) {
-      targetPlace = {
-        lat: place.geometry.location.lat(),
-        lng: place.geometry.location.lng()
-      };
-      targetLabel = place.formatted_address || place.name || destInput.value;
-      updateMarkers();
-      await startNavigation();
-    }
-  });
-
-  destInput.value = 'Kamppi Helsinki';
-  setMode('Valmis');
+  mapReady = true;
+  setMapVisible(true);
   showHint('Sano: “Vie Kamppiin”');
-  updateLoop();
+  setMode('Valmis');
 }
 
-window.initMap = initMap;
+function updateLoop() {
+  if (state.current && state.target) {
+    maybeAdvanceStep();
+    updateHUD();
+  }
+  requestAnimationFrame(updateLoop);
+}
 
 $('goBtn').addEventListener('click', () => startFromInput(destInput.value));
-$('micBtn').addEventListener('click', () => startVoiceRecognition());
+$('micBtn').addEventListener('click', () => {
+  if (state.recording) stopRecording();
+  else startRecording();
+});
 $('stopBtn').addEventListener('click', () => {
-  try { voiceRecognition?.stop(); } catch {}
+  try { state.recorder?.stop(); } catch {}
   stopNavigation();
   speakFi('Navigointi pysäytetty.');
 });
@@ -868,20 +907,23 @@ document.addEventListener('touchend', (e) => {
 
   if (Math.abs(dx) > Math.abs(dy)) {
     if (dx > 0) {
-      mapVisible = true;
-      mapEl.style.opacity = '1';
+      setMapVisible(true);
       showHint('Kartta-tila');
     } else {
-      mapVisible = false;
-      mapEl.style.opacity = '0.06';
+      setMapVisible(false);
       showHint('HUD-tila');
     }
   } else {
     if (dy < 0) {
-      if (currentLocation && map) map.setCenter(currentLocation);
+      if (state.current && map) map.setView([state.current.lat, state.current.lng], map.getZoom());
       showHint('Keskitetty');
     } else {
-      toggleMap();
+      setMapVisible(!state.mapVisible);
     }
   }
 }, { passive: true });
+
+window.addEventListener('load', () => {
+  initLeafletMap();
+  updateLoop();
+});

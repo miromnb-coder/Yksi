@@ -3,7 +3,7 @@ document.addEventListener('click', () => {
     speechSynthesis.cancel();
     speechSynthesis.resume();
   } catch {}
-}, { once: true });
+}, { once: true, passive: true });
 
 const $ = (id) => document.getElementById(id);
 
@@ -263,8 +263,8 @@ function speakFi(text, options = {}) {
   if (!clean || !('speechSynthesis' in window)) return;
 
   const shouldRelisten = options.relisten !== false && state.conversationMode;
-  const rate = typeof options.rate === 'number' ? options.rate : 0.90;
-  const pitch = typeof options.pitch === 'number' ? options.pitch : 1.03;
+  const rate = typeof options.rate === 'number' ? options.rate : 0.95;
+  const pitch = typeof options.pitch === 'number' ? options.pitch : 1.0;
   const volume = typeof options.volume === 'number' ? options.volume : 1.0;
 
   const doSpeak = () => {
@@ -309,18 +309,6 @@ function speakFi(text, options = {}) {
   doSpeak();
 }
 
-function speakFiAsync(text, options = {}) {
-  return new Promise((resolve) => {
-    speakFi(text, {
-      ...options,
-      onEnd: () => {
-        if (typeof options.onEnd === 'function') options.onEnd();
-        resolve();
-      }
-    });
-  });
-}
-
 function normalizeText(t) {
   return String(t || '')
     .toLowerCase()
@@ -331,7 +319,7 @@ function normalizeText(t) {
 
 function normalizeIntent(intent) {
   const value = String(intent || '').trim().toLowerCase();
-  if (['navigate', 'stop', 'whereami', 'status', 'help', 'clarify'].includes(value)) return value;
+  if (['navigate', 'stop', 'whereami', 'status', 'help', 'chat', 'clarify'].includes(value)) return value;
   return 'clarify';
 }
 
@@ -344,11 +332,13 @@ function fallbackReply(intent) {
     case 'status':
       return 'Tarkistan matkan.';
     case 'help':
-      return 'Voit sanoa: vie Kamppiin, lähin kauppa, lopeta, missä olen.';
+      return 'Voit puhua vapaasti.';
+    case 'chat':
+      return 'Selvä.';
     case 'navigate':
       return 'Selvä, etsitään paikka.';
     default:
-      return 'Minne haluat mennä?';
+      return 'Kerro lisää.';
   }
 }
 
@@ -373,100 +363,9 @@ function extractJsonObject(text) {
 }
 
 function localParseCommand(text) {
-  if (
-  t === 'moi' ||
-  t === 'hei' ||
-  t === 'hello' ||
-  t === 'hi' ||
-  t === 'terve'
-) {
-  return {
-    intent: 'chat',
-    reply: 'Moi! Minne haluat mennä?',
-    query: '',
-    nearby: false
-  };
-}
-  const t = normalizeText(text);
-
-  if (t.includes('lopeta') || t.includes('pysäytä') || t.includes('pysayta') || t.includes('seis')) {
-    return { intent: 'stop', reply: 'Navigointi pysäytetty.', query: '', nearby: false };
-  }
-
-  if (t.includes('missä olen') || t.includes('missä mä oon') || t.includes('sijainti')) {
-    return { intent: 'whereami', reply: 'Kerron sijaintisi.', query: '', nearby: false };
-  }
-
-  if (t.includes('kuinka pitkä matka') || t.includes('paljonko matkaa') || t.includes('matka')) {
-    return { intent: 'status', reply: 'Katsotaan matka.', query: '', nearby: false };
-  }
-
-  if (t.includes('apu') || t.includes('ohje')) {
-    return {
-      intent: 'help',
-      reply: 'Voit sanoa: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen.',
-      query: '',
-      nearby: false
-    };
-  }
-
-  const nearbyKeywords = ['lähin', 'lähimpään', 'ruokakauppa', 'kauppa', 'kahvila', 'asema', 'apteekki', 'ravintola', 'pizza'];
-  const nearby = nearbyKeywords.some(k => t.includes(k));
-
-  if (nearby) {
-    let query = 'kohde';
-    if (t.includes('ruokakauppa') || t.includes('kauppa')) query = 'ruokakauppa';
-    else if (t.includes('kahvila')) query = 'kahvila';
-    else if (t.includes('apteekki')) query = 'apteekki';
-    else if (t.includes('asema')) query = 'asema';
-    else if (t.includes('ravintola') || t.includes('pizza')) query = 'ravintola';
-
-    return {
-      intent: 'navigate',
-      reply: `Selvä, etsitään ${query}.`,
-      query,
-      nearby: true
-    };
-  }
-
-  for (const [needle, values] of Object.entries(ALIASES)) {
-    if (t === needle || t.includes(` ${needle} `) || t.startsWith(needle) || t.endsWith(needle)) {
-      return {
-        intent: 'navigate',
-        reply: `Selvä, etsitään ${values[0]}.`,
-        query: values[0],
-        nearby: false
-      };
-    }
-  }
-
-  if (t.startsWith('vie ') || t.startsWith('mene ') || t.startsWith('navigoi ') || t.startsWith('ohjaa ')) {
-    const cleaned = t
-      .replace(/^(vie|mene|navigoi|ohjaa)\s+/i, '')
-      .replace(/^(kohteeseen|paikkaan|osoitteeseen)\s+/i, '')
-      .trim();
-
-    const query = cleaned || state.lastQuery || 'kohde';
-    return {
-      intent: 'navigate',
-      reply: `Selvä, etsitään ${query}.`,
-      query,
-      nearby: false
-    };
-  }
-
-  if (t.includes('sinne') || t.includes('sama paikka') || t.includes('samaan paikkaan')) {
-    return {
-      intent: 'navigate',
-      reply: state.lastQuery ? `Selvä, etsitään sama paikka: ${state.lastQuery}.` : 'Minne haluat mennä?',
-      query: state.lastQuery,
-      nearby: false
-    };
-  }
-
   return {
     intent: 'clarify',
-    reply: 'En ymmärtänyt täysin. Sano esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen.',
+    reply: 'Kerro omin sanoin.',
     query: '',
     nearby: false
   };
@@ -976,6 +875,7 @@ async function startNavigationToQuery(query, nearby = false, spokenReply = '') {
 
 async function handleVoiceText(text) {
   const transcript = String(text || '').trim();
+
   if (!transcript) {
     speakFi('En kuullut mitään.');
     return null;
@@ -987,6 +887,11 @@ async function handleVoiceText(text) {
 
   state.lastIntent = data.intent || 'clarify';
   if (data.query) state.lastQuery = data.query;
+
+  if (data.intent === 'chat') {
+    speakFi(data.reply || 'Selvä.');
+    return data;
+  }
 
   if (data.intent === 'stop') {
     stopNavigation();
@@ -1019,18 +924,19 @@ async function handleVoiceText(text) {
       speakFi('Aktiivista navigointia ei ole käynnissä.');
       return data;
     }
+
     const d = haversine(state.current, state.target);
     speakFi(d < 20 ? 'Olet perillä.' : `Matkaa on noin ${formatDistance(d)}.`);
     return data;
   }
 
   if (data.intent === 'help') {
-    speakFi(data.reply || 'Voit sanoa esimerkiksi: vie Kamppiin, vie lähimpään ruokakauppaan, lopeta, missä olen.');
+    speakFi(data.reply || 'Voit puhua vapaasti.');
     return data;
   }
 
   if (data.intent === 'clarify') {
-    speakFi(data.reply || 'Minne haluat mennä?');
+    speakFi(data.reply || 'Kerro uudestaan.');
     return data;
   }
 

@@ -3,15 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Halo Ultra V3</title>
+  <title>Halo Ultra Fix</title>
   <style>
     :root{
-      --bg:#020203;
-      --glass:rgba(255,255,255,.08);
-      --line:rgba(255,255,255,.12);
-      --text:rgba(255,255,255,.96);
-      --muted:rgba(255,255,255,.62);
-      --dim:rgba(255,255,255,.38);
+      --glass: rgba(255,255,255,.08);
+      --line: rgba(255,255,255,.12);
+      --text: rgba(255,255,255,.96);
+      --muted: rgba(255,255,255,.62);
+      --dim: rgba(255,255,255,.40);
     }
 
     html, body {
@@ -34,7 +33,7 @@
       object-fit: cover;
       background: #000;
       transform: scaleX(-1);
-      filter: contrast(1.02) saturate(0.92) brightness(0.78);
+      filter: contrast(1.02) saturate(.95) brightness(.78);
     }
 
     #scrim {
@@ -42,15 +41,15 @@
       inset: 0;
       pointer-events: none;
       background:
-        radial-gradient(circle at 50% 45%, transparent 22%, rgba(0,0,0,.48) 100%),
-        linear-gradient(180deg, rgba(0,0,0,.12), rgba(0,0,0,.24));
+        radial-gradient(circle at 50% 45%, transparent 22%, rgba(0,0,0,.50) 100%),
+        linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.26));
     }
 
     #grain {
       position: fixed;
       inset: 0;
       pointer-events: none;
-      opacity: .12;
+      opacity: .10;
       mix-blend-mode: soft-light;
       background-image:
         linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
@@ -58,15 +57,15 @@
       background-size: 3px 3px;
     }
 
-    #topBar {
-      position: absolute;
-      top: 14px;
-      left: 14px;
-      right: 14px;
+    #ui {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
       display: flex;
-      gap: 10px;
-      align-items: center;
-      z-index: 20;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px 12px 12px;
+      box-sizing: border-box;
     }
 
     .glass {
@@ -74,7 +73,14 @@
       border: 1px solid var(--line);
       backdrop-filter: blur(18px) saturate(1.2);
       -webkit-backdrop-filter: blur(18px) saturate(1.2);
-      box-shadow: 0 10px 36px rgba(0,0,0,.25);
+      box-shadow: 0 10px 36px rgba(0,0,0,.24);
+    }
+
+    #topBar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      z-index: 20;
     }
 
     #search {
@@ -85,6 +91,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 0;
     }
 
     #search::before {
@@ -105,7 +112,7 @@
     }
 
     #dest::placeholder {
-      color: rgba(255,255,255,.42);
+      color: rgba(255,255,255,.40);
     }
 
     .btn {
@@ -118,9 +125,56 @@
       color: var(--text);
       font-size: 14px;
       font-weight: 700;
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
     }
+
+    #stateLine {
+      margin-top: 10px;
+      font-size: 12px;
+      color: rgba(255,255,255,.72);
+      text-align: center;
+      letter-spacing: .2px;
+      min-height: 16px;
+      z-index: 20;
+    }
+
+    #micState {
+      position: fixed;
+      left: 50%;
+      top: 14px;
+      transform: translateX(-50%);
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.10);
+      color: rgba(255,255,255,.78);
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 180ms ease;
+      z-index: 30;
+    }
+
+    #micState.show { opacity: 1; }
+
+    #hint {
+      position: fixed;
+      left: 50%;
+      bottom: 118px;
+      transform: translateX(-50%);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid var(--line);
+      color: rgba(255,255,255,.78);
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 180ms ease;
+      pointer-events: none;
+      text-align: center;
+      max-width: calc(100vw - 32px);
+      z-index: 25;
+    }
+
+    #hint.show { opacity: 1; }
 
     #center {
       position: absolute;
@@ -138,9 +192,7 @@
       z-index: 12;
     }
 
-    #center.show {
-      opacity: 1;
-    }
+    #center.show { opacity: 1; }
 
     .ring {
       width: 152px;
@@ -225,57 +277,11 @@
       text-transform: uppercase;
     }
 
-    #micState {
-      position: absolute;
-      left: 50%;
-      top: 14px;
-      transform: translateX(-50%);
-      padding: 7px 12px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.07);
-      border: 1px solid rgba(255,255,255,.10);
-      color: rgba(255,255,255,.78);
-      font-size: 12px;
-      opacity: 0;
-      transition: opacity 180ms ease;
-      z-index: 22;
-    }
-
-    #micState.show { opacity: 1; }
-
-    #hint {
-      position: absolute;
-      left: 50%;
-      bottom: 122px;
-      transform: translateX(-50%);
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.08);
-      border: 1px solid var(--line);
-      color: rgba(255,255,255,.78);
-      font-size: 12px;
-      opacity: 0;
-      transition: opacity 180ms ease;
-      pointer-events: none;
-      text-align: center;
-      max-width: calc(100vw - 32px);
-      z-index: 22;
-    }
-
-    #hint.show { opacity: 1; }
-
     #bottom {
-      margin: 0 12px 12px;
-      padding: 12px;
-      border-radius: 24px;
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,255,255,.12);
-      backdrop-filter: blur(18px) saturate(1.2);
-      -webkit-backdrop-filter: blur(18px) saturate(1.2);
-      box-shadow: 0 10px 36px rgba(0,0,0,.28);
+      z-index: 20;
       display: grid;
       gap: 10px;
-      z-index: 20;
+      margin-top: auto;
     }
 
     #chips {
@@ -323,6 +329,11 @@
       font-size: 12px;
       color: rgba(255,255,255,.54);
     }
+
+    .small {
+      font-size: 12px;
+      color: rgba(255,255,255,.56);
+    }
   </style>
 </head>
 <body>
@@ -330,50 +341,58 @@
   <div id="scrim"></div>
   <div id="grain"></div>
 
-  <div id="micState">Kuuntelen…</div>
+  <div id="ui">
+    <div>
+      <div id="micState">Kuuntelen…</div>
 
-  <div id="topBar">
-    <div id="search" class="glass">
-      <input id="dest" placeholder="Kirjoita kohde, esim. Kamppi Helsinki" />
+      <div id="topBar">
+        <div id="search" class="glass">
+          <input id="dest" placeholder="Kirjoita kohde, esim. Kamppi Helsinki" />
+        </div>
+        <button class="btn" id="startBtn">Aloita</button>
+        <button class="btn" id="micBtn">Mikki</button>
+        <button class="btn" id="stopBtn">Lopeta</button>
+      </div>
+
+      <div id="stateLine" class="small">Paina Aloita ja salli kamera, sijainti ja kompassi.</div>
     </div>
-    <button class="btn" id="startBtn">Aloita</button>
-    <button class="btn" id="micBtn">Mikki</button>
-    <button class="btn" id="stopBtn">Lopeta</button>
-  </div>
 
-  <div id="hint">Sano: “Vie Kamppiin”, “Vie lähimpään ruokakauppaan”, “Lopeta”, “Missä olen”, “Kuinka pitkä matka”</div>
+    <div>
+      <div id="hint">Sano: “Vie Kamppiin”, “Vie lähimpään ruokakauppaan”, “Lopeta”, “Missä olen”, “Kuinka pitkä matka”</div>
 
-  <div id="center">
-    <div class="ring">
-      <div class="arrowWrap" id="arrowWrap">
-        <svg class="arrowSvg" id="arrowSvg" viewBox="0 0 100 100" aria-hidden="true">
-          <path d="M50 14 L50 70" fill="none" stroke="white" stroke-width="8" stroke-linecap="round"></path>
-          <path d="M28 36 L50 14 L72 36" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
-        </svg>
+      <div id="center">
+        <div class="ring">
+          <div class="arrowWrap" id="arrowWrap">
+            <svg class="arrowSvg" id="arrowSvg" viewBox="0 0 100 100" aria-hidden="true">
+              <path d="M50 14 L50 70" fill="none" stroke="white" stroke-width="8" stroke-linecap="round"></path>
+              <path d="M28 36 L50 14 L72 36" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </div>
+        </div>
+        <div id="distance">—</div>
+        <div id="sub">Valmis</div>
       </div>
     </div>
-    <div id="distance">—</div>
-    <div id="sub">Valmis</div>
-  </div>
 
-  <div id="bottom">
-    <div id="chips">
-      <div class="chip" id="gpsChip">Sijainti: pois</div>
-      <div class="chip" id="compassChip">Kompassi: pois</div>
-      <div class="chip" id="modeChip">Tila: Valmis</div>
-    </div>
-    <div id="progress"><div id="bar"></div></div>
-    <div id="legend">
-      <div>Swipe vasen/oikea: HUD / Kamera</div>
-      <div>Puhe: suomi</div>
-      <div>Nominatim + OSRM</div>
+    <div id="bottom">
+      <div id="chips">
+        <div class="chip" id="gpsChip">Sijainti: pois</div>
+        <div class="chip" id="compassChip">Kompassi: pois</div>
+        <div class="chip" id="modeChip">Tila: Valmis</div>
+      </div>
+      <div id="progress"><div id="bar"></div></div>
+      <div id="legend">
+        <div>Swipe vasen/oikea: HUD / Kamera</div>
+        <div>Puhe: suomi</div>
+        <div>Nominatim + OSRM</div>
+      </div>
     </div>
   </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
 
-    const els = {
+    const el = {
       cam: $('cam'),
       center: $('center'),
       arrowSvg: $('arrowSvg'),
@@ -389,7 +408,8 @@
       dest: $('dest'),
       startBtn: $('startBtn'),
       micBtn: $('micBtn'),
-      stopBtn: $('stopBtn')
+      stopBtn: $('stopBtn'),
+      stateLine: $('stateLine')
     };
 
     const state = {
@@ -440,14 +460,15 @@
     };
 
     function showHint(text, ms = 1800) {
-      els.hint.textContent = text;
-      els.hint.classList.add('show');
+      el.hint.textContent = text;
+      el.hint.classList.add('show');
       clearTimeout(showHint.t);
-      showHint.t = setTimeout(() => els.hint.classList.remove('show'), ms);
+      showHint.t = setTimeout(() => el.hint.classList.remove('show'), ms);
     }
 
     function setMode(text) {
-      els.modeChip.textContent = `Tila: ${text}`;
+      el.modeChip.textContent = `Tila: ${text}`;
+      el.stateLine.textContent = text;
     }
 
     function toRad(v) { return v * Math.PI / 180; }
@@ -638,6 +659,7 @@
             lastIntent: state.lastIntent
           })
         });
+
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'AI-virhe');
         return data;
@@ -787,10 +809,10 @@
       const turnMap = {
         left: 'vasemmalle',
         right: 'oikealle',
-        slight left: 'hieman vasemmalle',
-        slight right: 'hieman oikealle',
-        sharp left: 'jyrkästi vasemmalle',
-        sharp right: 'jyrkästi oikealle'
+        'slight left': 'hieman vasemmalle',
+        'slight right': 'hieman oikealle',
+        'sharp left': 'jyrkästi vasemmalle',
+        'sharp right': 'jyrkästi oikealle'
       };
 
       if (type === 'arrive') return 'Perillä';
@@ -812,11 +834,6 @@
       return state.routeSteps[Math.min(state.activeStepIndex, state.routeSteps.length - 1)];
     }
 
-    function setCameraVisible(v) {
-      els.cam.style.opacity = v ? '1' : '0.08';
-      state.mapVisible = v;
-    }
-
     async function startCamera() {
       if (state.cameraOn) return true;
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -826,15 +843,15 @@
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' }
-          },
+          video: { facingMode: { ideal: 'environment' } },
           audio: false
         });
-        els.cam.srcObject = stream;
+
+        el.cam.srcObject = stream;
+        try { await el.cam.play(); } catch {}
         state.stream = stream;
         state.cameraOn = true;
-        setCameraVisible(true);
+        el.cam.style.opacity = '1';
         return true;
       } catch (e) {
         console.error(e);
@@ -848,7 +865,7 @@
         state.stream.getTracks().forEach(t => t.stop());
         state.stream = null;
       }
-      els.cam.srcObject = null;
+      el.cam.srcObject = null;
       state.cameraOn = false;
     }
 
@@ -860,7 +877,7 @@
             typeof DeviceOrientationEvent.requestPermission === 'function') {
           const permission = await DeviceOrientationEvent.requestPermission();
           if (permission !== 'granted') {
-            els.compassChip.textContent = 'Kompassi: kieltty';
+            el.compassChip.textContent = 'Kompassi: kieltty';
             return false;
           }
         }
@@ -874,11 +891,11 @@
         }, true);
 
         state.compassOn = true;
-        els.compassChip.textContent = 'Kompassi: päällä';
+        el.compassChip.textContent = 'Kompassi: päällä';
         return true;
       } catch (e) {
         console.error(e);
-        els.compassChip.textContent = 'Kompassi: pois';
+        el.compassChip.textContent = 'Kompassi: pois';
         return false;
       }
     }
@@ -897,7 +914,7 @@
               lng: pos.coords.longitude,
               accuracy: pos.coords.accuracy
             };
-            els.gpsChip.textContent = 'Sijainti: päällä';
+            el.gpsChip.textContent = 'Sijainti: päällä';
             resolve(state.current);
           },
           (err) => {
@@ -924,7 +941,7 @@
             lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy
           };
-          els.gpsChip.textContent = 'Sijainti: päällä';
+          el.gpsChip.textContent = 'Sijainti: päällä';
           updateHUD();
         },
         () => {},
@@ -986,10 +1003,10 @@
 
     function updateHUD() {
       if (!state.current || !state.target) {
-        els.distance.textContent = '—';
-        els.sub.textContent = state.listening ? 'Kuuntelen' : 'Valmis';
-        els.center.classList.toggle('show', state.listening);
-        els.bar.style.width = '0%';
+        el.distance.textContent = '—';
+        el.sub.textContent = state.listening ? 'Kuuntelen' : 'Valmis';
+        el.center.classList.toggle('show', state.listening);
+        el.bar.style.width = '0%';
         return;
       }
 
@@ -1003,28 +1020,28 @@
       const diff = h == null ? 0 : diffAngle(b, h);
       const rot = arrowRotationFromDiff(diff);
 
-      els.arrowSvg.style.transform = `rotate(${rot}deg)`;
+      el.arrowSvg.style.transform = `rotate(${rot}deg)`;
 
       if (dTarget < 20) {
-        els.distance.textContent = 'NYT';
-        els.sub.textContent = 'Perillä pian';
+        el.distance.textContent = 'NYT';
+        el.sub.textContent = 'Perillä pian';
       } else {
-        els.distance.textContent = formatDistance(dAnchor);
-        els.sub.textContent = stepInstruction(step) || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
+        el.distance.textContent = formatDistance(dAnchor);
+        el.sub.textContent = stepInstruction(step) || (Math.abs(diff) < 20 ? 'Oikea suunta' : 'Käänny');
       }
 
       const show = state.listening || !!state.target || dTarget < 120 || Math.abs(diff) > 18;
-      els.center.classList.toggle('show', !!show);
+      el.center.classList.toggle('show', !!show);
 
       const pct = Math.max(0, Math.min(100, 100 - Math.min(dTarget, 1500) / 15));
-      els.bar.style.width = `${pct}%`;
+      el.bar.style.width = `${pct}%`;
 
       if (dTarget < 20 && Date.now() - state.lastVibeAt > 1200) {
         if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
         state.lastVibeAt = Date.now();
       }
 
-      els.arrowWrap.style.transform = dTarget < 20 ? 'scale(1.06)' : 'scale(1)';
+      el.arrowWrap.style.transform = dTarget < 20 ? 'scale(1.06)' : 'scale(1)';
       maybeAdvanceStep();
       maybeReroute();
     }
@@ -1040,7 +1057,8 @@
       state.lastQuery = '';
       state.lastIntent = '';
       clearRoute();
-      els.gpsChip.textContent = 'Sijainti: pois';
+      el.gpsChip.textContent = 'Sijainti: pois';
+      el.compassChip.textContent = state.compassOn ? 'Kompassi: päällä' : 'Kompassi: pois';
       setMode('Valmis');
       updateHUD();
       showHint('Pysäytetty');
@@ -1080,6 +1098,7 @@
       await getLocationNow().catch(() => {});
       await requestCompass();
       watchLocation();
+      updateHUD();
     }
 
     async function startNavigationToQuery(query, nearby = false, spokenReply = '') {
@@ -1113,10 +1132,6 @@
         speak('En löytänyt paikkaa. Kokeile tarkempaa nimeä.');
         showHint('Paikkaa ei löytynyt');
       }
-    }
-
-    function playLatestAudio() {
-      if (!state.lastSpeechVoice) return;
     }
 
     async function handleCommand(text) {
@@ -1201,26 +1216,26 @@
 
       state.speechRec.onstart = () => {
         state.listening = true;
-        els.micBtn.textContent = 'Kuuntelen';
-        els.micState.classList.add('show');
+        el.micBtn.textContent = 'Kuuntelen';
+        el.micState.classList.add('show');
         setMode('Kuuntelen');
-        els.center.classList.add('show');
+        el.center.classList.add('show');
         showHint('Puhu nyt');
         speak('Kuuntelen.');
       };
 
       state.speechRec.onend = () => {
         state.listening = false;
-        els.micBtn.textContent = 'Mikki';
-        els.micState.classList.remove('show');
+        el.micBtn.textContent = 'Mikki';
+        el.micState.classList.remove('show');
         setMode(state.target ? 'Navigointi' : 'Valmis');
         updateHUD();
       };
 
       state.speechRec.onerror = (e) => {
         state.listening = false;
-        els.micBtn.textContent = 'Mikki';
-        els.micState.classList.remove('show');
+        el.micBtn.textContent = 'Mikki';
+        el.micState.classList.remove('show');
         setMode(state.target ? 'Navigointi' : 'Valmis');
         console.log('speech error', e);
         showHint('Puhe ei onnistunut');
@@ -1262,8 +1277,8 @@
         state.recording = true;
         state.listening = true;
 
-        els.micBtn.textContent = 'Puhu';
-        els.micState.classList.add('show');
+        el.micBtn.textContent = 'Puhu';
+        el.micState.classList.add('show');
         setMode('Kuuntelen');
         showHint('Puhu nyt');
         speak('Kuuntelen.');
@@ -1284,8 +1299,8 @@
           } finally {
             state.recording = false;
             state.listening = false;
-            els.micBtn.textContent = 'Mikki';
-            els.micState.classList.remove('show');
+            el.micBtn.textContent = 'Mikki';
+            el.micState.classList.remove('show');
             if (state.stream) {
               state.stream.getTracks().forEach(t => t.stop());
               state.stream = null;
@@ -1304,6 +1319,16 @@
       }
     }
 
+    function stopRecording() {
+      clearTimeout(state.recordTimer);
+      if (!state.recording) return;
+      try {
+        if (state.recorder && state.recorder.state !== 'inactive') {
+          state.recorder.stop();
+        }
+      } catch {}
+    }
+
     async function startVoice() {
       const speechOk = startSpeechRecognition();
       if (!speechOk) {
@@ -1319,10 +1344,15 @@
       updateHUD();
       showHint('Sano: “Vie Kamppiin”');
       setMode('Valmis');
+      if (!state.cameraOn) {
+        el.stateLine.textContent = 'Kamera ei vielä auennut. Paina Aloita uudestaan ja salli kamera.';
+      } else {
+        el.stateLine.textContent = 'Kamera on päällä. Paina Mikki tai kirjoita kohde.';
+      }
     }
 
     async function goFromInput() {
-      const q = String(els.dest.value || '').trim();
+      const q = String(el.dest.value || '').trim();
       if (!q) {
         speak('Kirjoita kohde ensin.');
         showHint('Kirjoita kohde ensin');
@@ -1352,23 +1382,23 @@
       requestAnimationFrame(updateLoop);
     }
 
-    els.startBtn.addEventListener('click', () => {
+    el.startBtn.addEventListener('click', () => {
       startSession();
     });
 
-    els.micBtn.addEventListener('click', () => {
+    el.micBtn.addEventListener('click', () => {
       if (state.recording) stopRecording();
       else startVoice();
     });
 
-    els.stopBtn.addEventListener('click', () => {
+    el.stopBtn.addEventListener('click', () => {
       try { state.speechRec?.stop(); } catch {}
       try { state.recorder?.stop(); } catch {}
       stopNavigation();
       stopCamera();
     });
 
-    els.dest.addEventListener('keydown', (e) => {
+    el.dest.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         goFromInput();
@@ -1398,10 +1428,12 @@
 
       if (Math.abs(dx) > Math.abs(dy)) {
         if (dx > 0) {
-          setCameraVisible(true);
+          el.cam.style.opacity = '1';
+          state.mapVisible = true;
           showHint('Kamera-tila');
         } else {
-          setCameraVisible(false);
+          el.cam.style.opacity = '0.08';
+          state.mapVisible = false;
           showHint('HUD-tila');
         }
       } else {
@@ -1409,7 +1441,8 @@
           speak('Keskitetty.');
           showHint('Keskitetty');
         } else {
-          setCameraVisible(!state.mapVisible);
+          state.mapVisible = !state.mapVisible;
+          el.cam.style.opacity = state.mapVisible ? '1' : '0.08';
           showHint(state.mapVisible ? 'Kamera näkyy' : 'Kamera piilossa');
         }
       }

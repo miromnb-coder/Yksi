@@ -32,6 +32,7 @@ module.exports = async function handler(req, res) {
   try {
     const audioBuffer = Buffer.from(audioBase64, 'base64');
     const blob = new Blob([audioBuffer], { type: mimeType });
+
     const form = new FormData();
     form.append('file', blob, mimeType.includes('mp4') ? 'speech.m4a' : 'speech.webm');
     form.append('model', GROQ_STT_MODEL);

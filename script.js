@@ -1,4 +1,10 @@
 document.addEventListener('click', () => {
+  setTimeout(() => {
+  try {
+    speechSynthesis.cancel();
+    speechSynthesis.resume();
+  } catch {}
+}, 1000);
   try {
     speechSynthesis.cancel();
     speechSynthesis.resume();

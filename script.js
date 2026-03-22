@@ -373,6 +373,20 @@ function extractJsonObject(text) {
 }
 
 function localParseCommand(text) {
+  if (
+  t === 'moi' ||
+  t === 'hei' ||
+  t === 'hello' ||
+  t === 'hi' ||
+  t === 'terve'
+) {
+  return {
+    intent: 'chat',
+    reply: 'Moi! Minne haluat mennä?',
+    query: '',
+    nearby: false
+  };
+}
   const t = normalizeText(text);
 
   if (t.includes('lopeta') || t.includes('pysäytä') || t.includes('pysayta') || t.includes('seis')) {

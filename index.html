@@ -363,3 +363,19 @@
   </script>
 </body>
 </html>
+async function enableCompass() {
+  if (typeof DeviceOrientationEvent !== "undefined" &&
+      typeof DeviceOrientationEvent.requestPermission === "function") {
+
+    const permission = await DeviceOrientationEvent.requestPermission();
+    if (permission !== "granted") return;
+  }
+
+  window.addEventListener("deviceorientation", (e) => {
+    if (e.webkitCompassHeading !== undefined) {
+      state.heading = e.webkitCompassHeading; // iPhone
+    } else if (e.alpha !== null) {
+      state.heading = 360 - e.alpha; // fallback
+    }
+  }, true);
+}
